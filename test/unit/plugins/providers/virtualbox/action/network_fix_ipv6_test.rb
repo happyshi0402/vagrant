@@ -13,7 +13,7 @@ describe VagrantPlugins::ProviderVirtualBox::Action::NetworkFixIPv6 do
 
   let(:machine) do
     iso_env.machine(iso_env.machine_names[0], :dummy).tap do |m|
-      m.provider.stub(driver: driver)
+      allow(m.provider).to receive(:driver).and_return(driver)
     end
   end
 
@@ -45,7 +45,7 @@ describe VagrantPlugins::ProviderVirtualBox::Action::NetworkFixIPv6 do
         .and_return(private_network: { ip: 'fe:80::' })
       allow(UDPSocket).to receive(:new).with(Socket::AF_INET6)
         .and_return(socket)
-      socket.stub(:connect)
+      allow(socket).to receive(:connect)
     end
 
     it "only checks the interfaces associated with the VM" do
@@ -115,6 +115,23 @@ describe VagrantPlugins::ProviderVirtualBox::Action::NetworkFixIPv6 do
                      ]
       ifaces = { 1 => {type: :hostonly, hostonly: "vboxnet0"}
                }
+      allow(machine.provider.driver).to receive(:read_network_interfaces)
+        .and_return(ifaces)
+      allow(machine.provider.driver).to receive(:read_host_only_interfaces)
+        .and_return(all_networks)
+      subject.call(env)
+      expect(socket).to_not have_received(:connect)
+    end
+
+    it "should ignore interfaces with link-local IPv6 address" do
+      all_networks = [{name: "vboxnet0",
+        ipv6: "fe80::ffff:ffff:ffff:ffff",
+        ipv6_prefix: 64,
+        status: 'Up'
+      }
+      ]
+      ifaces = { 1 => {type: :hostonly, hostonly: "vboxnet0"}
+      }
       allow(machine.provider.driver).to receive(:read_network_interfaces)
         .and_return(ifaces)
       allow(machine.provider.driver).to receive(:read_host_only_interfaces)

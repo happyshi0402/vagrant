@@ -32,13 +32,14 @@ describe Vagrant::Plugin::StateFile do
         "require"               => "",
         "sources"               => [],
         "installed_gem_version" => nil,
+        "env_local"             => false,
       })
     end
 
     it "should check for plugins" do
-      expect(subject.has_plugin?("foo")).to be_false
+      expect(subject.has_plugin?("foo")).to be(false)
       subject.add_plugin("foo")
-      expect(subject.has_plugin?("foo")).to be_true
+      expect(subject.has_plugin?("foo")).to be(true)
     end
 
     it "should remove plugins" do

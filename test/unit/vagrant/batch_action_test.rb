@@ -11,8 +11,8 @@ describe Vagrant::BatchAction do
 
   def new_machine(options)
     double("machine").tap do |m|
-      m.stub(provider_name: provider_name)
-      m.stub(provider_options: options)
+      allow(m).to receive(:provider_name).and_return(provider_name)
+      allow(m).to receive(:provider_options).and_return(options)
       allow(m).to receive(:action) do |action, opts|
         lock.synchronize do
           called_actions << [m, action, opts]
@@ -62,6 +62,25 @@ describe Vagrant::BatchAction do
 
       subject.action(machine, "up")
       subject.run
+    end
+
+    context "with provider supporting parallel actions" do
+      let(:provider_options) { {parallel: true} }
+
+      it "should flag threads as being parallel actions" do
+        parallel = nil
+        subject.custom(machine) { |m| parallel = Thread.current[:batch_parallel_action] }
+        subject.custom(machine) { |*_| }
+        subject.run
+        expect(parallel).to eq(true)
+      end
+
+      it "should exit the process if exit_code has been set" do
+        subject.custom(machine) { |m| Thread.current[:exit_code] = 1}
+        subject.custom(machine) { |*_| }
+        expect(Process).to receive(:exit!).with(1)
+        subject.run
+      end
     end
   end
 end

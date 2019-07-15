@@ -8,25 +8,20 @@ module VagrantPlugins
     class Plugin < Vagrant.plugin("2")
       name "vagrant-login"
       description <<-DESC
-      Provides the login command and internal API access to Atlas.
+      Provides the login command and internal API access to Vagrant Cloud.
       DESC
 
       command(:login) do
-        require_relative "command"
+        require File.expand_path("../../cloud/auth/login", __FILE__)
         init!
-        Command
-      end
-
-      action_hook(:cloud_authenticated_boxes, :authenticate_box_url) do |hook|
-        require_relative "middleware/add_authentication"
-        hook.prepend(AddAuthentication)
+        VagrantPlugins::CloudCommand::AuthCommand::Command::Login
       end
 
       protected
 
       def self.init!
         return if defined?(@_init)
-        I18n.load_path << File.expand_path("../locales/en.yml", __FILE__)
+        I18n.load_path << File.expand_path("../../cloud/locales/en.yml", __FILE__)
         I18n.reload!
         @_init = true
       end

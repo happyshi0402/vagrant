@@ -9,10 +9,18 @@ description: |-
 
 # Reseller Information
 
-We are happy to work with resellers for the Vagrant VMware provider.
-
 This page is intended to answer questions commonly needed by resellers. If you
 are a reseller all required information should be on this page.
+
+## Quote
+
+Each license is a one-time cost of $79 USD per seat. All orders must be placed
+using US currency.
+
+## Self-serve purchase
+
+Licenses can be purchased in our [self service portal](http://www.vagrantup.com/vmware#buy-now)
+with a credit card.
 
 ## Reseller Discounts
 
@@ -21,41 +29,19 @@ qualify.
 
 ## Volume Pricing
 
-We offer volume pricing when purchasing more than 150 licenses. If you or your
-organization plans to purchase more than 150 license seats, please contact
-sales@hashicorp.com to learn more about volume discounts before making your
+We offer volume pricing when purchasing 1 or more sets of 150 licenses. If you
+or your organization plans to purchase 1 or more sets of 150 licenses, please
+contact sales@hashicorp.com to learn more about volume discounts before making your
 purchase.
-
-## Quote
-
-Each license is a one-time cost of $79 USD per seat. All orders must be placed
-using US currency.
-
-## VMware Workstation vs. VMware Fusion
-
-The Vagrant VMware Workstation and Vagrant VMware Fusion licenses are separate
-products. While they share the same price, they have a different license and
-different product SKUs. Please note that the purchase of the license does not
-include the VMware software itself.
 
 ## Purchase Orders
 
-Although we prefer the self-serve purchase, you may email us a complete
-PO (with credit card information included) to sales@hashicorp.com. We
-will then process your order. **The minimum quantity for purchase orders is 50
-licenses!**
+Although we prefer the self-serve purchase, for 1 or more sets of 150 licenses, we
+can do PO. Please contact sales@hashicorp.com for a quote.
 
-All purchase orders must include the following:
+The following product SKU is available:
 
-1. Billing address
-1. Billing phone number
-1. Credit card number
-1. CCV number
-
-The following product SKUs are available:
-
-- `HCVAVFD` - Vagrant VMware Fusion Plugin (8+)
-- `HCVAVWD` - Vagrant VMware Workstation Plugin (12+)
+- `HCVAVDA` - Vagrant VMware Desktop Plugin
 
 Failure to include all required information or proper product SKUs may result in
 delayed processing.
@@ -97,5 +83,5 @@ Business website and support:
 
 Our current registered business address is:
 
-    101 2nd Street #575
+    101 2nd Street #700
     San Francisco, CA 94105

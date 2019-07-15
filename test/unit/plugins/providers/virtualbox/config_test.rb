@@ -25,10 +25,10 @@ describe VagrantPlugins::ProviderVirtualBox::Config do
 
   before do
     vm_config = double("vm_config")
-    vm_config.stub(networks: [])
+    allow(vm_config).to receive(:networks).and_return([])
     config = double("config")
-    config.stub(vm: vm_config)
-    machine.stub(config: config)
+    allow(config).to receive(:vm).and_return(vm_config)
+    allow(machine).to receive(:config).and_return(config)
   end
 
   its "valid by default" do
@@ -39,16 +39,28 @@ describe VagrantPlugins::ProviderVirtualBox::Config do
   context "defaults" do
     before { subject.finalize! }
 
-    it { expect(subject.check_guest_additions).to be_true }
-    it { expect(subject.gui).to be_false }
+    it { expect(subject.check_guest_additions).to be(true) }
+    it { expect(subject.gui).to be(false) }
     it { expect(subject.name).to be_nil }
-    it { expect(subject.functional_vboxsf).to be_true }
+    it { expect(subject.functional_vboxsf).to be(true) }
+    it { expect(subject.default_nic_type).to be_nil }
 
     it "should have one NAT adapter" do
       expect(subject.network_adapters).to eql({
         1 => [:nat, {}],
       })
     end
+  end
+
+  describe "#default_nic_type" do
+    let(:nic_type) { "custom" }
+
+    before do
+      subject.default_nic_type = nic_type
+      subject.finalize!
+    end
+
+    it { expect(subject.default_nic_type).to eq(nic_type) }
   end
 
   describe "#merge" do

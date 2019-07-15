@@ -34,6 +34,16 @@ module VagrantPlugins
         Cap::Halt
       end
 
+      guest_capability(:windows, :create_tmp_path) do
+        require_relative "cap/file_system"
+        Cap::FileSystem
+      end
+
+      guest_capability(:windows, :decompress_zip) do
+        require_relative "cap/file_system"
+        Cap::FileSystem
+      end
+
       guest_capability(:windows, :mount_virtualbox_shared_folder) do
         require_relative "cap/mount_shared_folder"
         Cap::MountSharedFolder
@@ -50,6 +60,11 @@ module VagrantPlugins
       end
 
       guest_capability(:windows, :wait_for_reboot) do
+        require_relative "cap/reboot"
+        Cap::Reboot
+      end
+
+      guest_capability(:windows, :reboot) do
         require_relative "cap/reboot"
         Cap::Reboot
       end
@@ -72,6 +87,16 @@ module VagrantPlugins
       guest_capability(:windows, :rsync_pre) do
         require_relative "cap/rsync"
         Cap::RSync
+      end
+
+      guest_capability(:windows, :insert_public_key) do
+        require_relative "cap/public_key"
+        Cap::PublicKey
+      end
+
+      guest_capability(:windows, :remove_public_key) do
+        require_relative "cap/public_key"
+        Cap::PublicKey
       end
 
       protected

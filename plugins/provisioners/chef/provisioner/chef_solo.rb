@@ -5,6 +5,7 @@ require "set"
 require "log4r"
 
 require "vagrant/util/counter"
+require "vagrant/action/builtin/mixin_synced_folders"
 
 require_relative "base"
 
@@ -87,20 +88,21 @@ module VagrantPlugins
                 key         = Digest::MD5.hexdigest(local_path)
                 remote_path = "#{guest_provisioning_path}/#{key}"
               else
-                @machine.ui.warn(I18n.t("vagrant.provisioners.chef.cookbook_folder_not_found_warning",
+                appended_folder = "cookbooks" if appended_folder.nil?
+                @machine.ui.warn(I18n.t("vagrant.provisioners.chef.#{appended_folder}_folder_not_found_warning",
                                        path: local_path.to_s))
                 next
               end
             else
               # Path already exists on the virtual machine. Expand it
               # relative to where we're provisioning.
-              remote_path = File.expand_path(path, guest_provisioning_path)
 
               # Remove drive letter if running on a windows host. This is a bit
               # of a hack but is the most portable way I can think of at the moment
               # to achieve this. Otherwise, Vagrant attempts to share at some crazy
               # path like /home/vagrant/c:/foo/bar
-              remote_path = remote_path.gsub(/^[a-zA-Z]:/, "")
+              remote_path = File.expand_path(path.sub(/^[a-zA-Z]:\//, "/"), guest_provisioning_path.sub(/^[a-zA-Z]:\//, "/"))
+              remote_path.sub!(/^[a-zA-Z]:\//, "/")
             end
 
             # If we have specified a folder name to append then append it
@@ -175,36 +177,43 @@ module VagrantPlugins
             @machine.ui.warn(I18n.t("vagrant.chef_run_list_empty"))
           end
 
-          if @machine.guest.capability?(:wait_for_reboot)
-            @machine.guest.capability(:wait_for_reboot)
-          end
-
           command = CommandBuilder.command(:solo, @config,
             windows: windows?,
             colored: @machine.env.ui.color?,
             legacy_mode: @config.legacy_mode,
           )
 
+          still_active = 259 #provisioner has asked chef to reboot
+
           @config.attempts.times do |attempt|
-            if attempt == 0
-              @machine.ui.info I18n.t("vagrant.provisioners.chef.running_solo")
-            else
-              @machine.ui.info I18n.t("vagrant.provisioners.chef.running_solo_again")
+            exit_status = 0
+            while exit_status == 0 || exit_status == still_active
+              if @machine.guest.capability?(:wait_for_reboot)
+                @machine.guest.capability(:wait_for_reboot)
+              elsif attempt > 0
+                sleep 10
+                @machine.communicate.wait_for_ready(@machine.config.vm.boot_timeout)
+              end
+              if attempt == 0
+                @machine.ui.info I18n.t("vagrant.provisioners.chef.running_solo")
+              else
+                @machine.ui.info I18n.t("vagrant.provisioners.chef.running_solo_again")
+              end
+
+              opts = { error_check: false, elevated: true }
+              exit_status = @machine.communicate.sudo(command, opts) do |type, data|
+                # Output the data with the proper color based on the stream.
+                color = type == :stdout ? :green : :red
+
+                data = data.chomp
+                next if data.empty?
+
+                @machine.ui.info(data, color: color)
+              end
+
+              # There is no need to run Chef again if it converges
+              return if exit_status == 0
             end
-
-            opts = { error_check: false, elevated: true }
-            exit_status = @machine.communicate.sudo(command, opts) do |type, data|
-              # Output the data with the proper color based on the stream.
-              color = type == :stdout ? :green : :red
-
-              data = data.chomp
-              next if data.empty?
-
-              @machine.ui.info(data, color: color)
-            end
-
-            # There is no need to run Chef again if it converges
-            return if exit_status == 0
           end
 
           # If we reached this point then Chef never converged! Error.

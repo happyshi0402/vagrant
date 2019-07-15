@@ -1,6 +1,7 @@
 require 'optparse'
 
 require "vagrant/util/safe_puts"
+require "vagrant/util/platform"
 
 module VagrantPlugins
   module CommandSSHConfig
@@ -9,6 +10,10 @@ module VagrantPlugins
 
       def self.synopsis
         "outputs OpenSSH valid configuration to connect to the machine"
+      end
+
+      def convert_win_paths(paths)
+        paths.map! { |path| Vagrant::Util::Platform.format_windows_path(path, :disable_unc) }
       end
 
       def execute
@@ -32,13 +37,17 @@ module VagrantPlugins
           ssh_info = machine.ssh_info
           raise Vagrant::Errors::SSHNotReady if ssh_info.nil?
 
+          if Vagrant::Util::Platform.windows?
+            ssh_info[:private_key_path] = convert_win_paths(ssh_info[:private_key_path])
+          end
+
           variables = {
             host_key: options[:host] || machine.name || "vagrant",
             ssh_host: ssh_info[:host],
             ssh_port: ssh_info[:port],
             ssh_user: ssh_info[:username],
             keys_only: ssh_info[:keys_only],
-            paranoid: ssh_info[:paranoid],
+            verify_host_key: ssh_info[:verify_host_key],
             private_key_path: ssh_info[:private_key_path],
             log_level: ssh_info[:log_level],
             forward_agent: ssh_info[:forward_agent],
@@ -46,6 +55,7 @@ module VagrantPlugins
             proxy_command: ssh_info[:proxy_command],
             ssh_command:   ssh_info[:ssh_command],
             forward_env:   ssh_info[:forward_env],
+            config:        ssh_info[:config],
           }
 
           # Render the template and output directly to STDOUT

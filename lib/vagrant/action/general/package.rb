@@ -73,14 +73,28 @@ module Vagrant
 
           self.class.validate!(env["package.output"], env["package.directory"])
 
+          package_with_folder_path if env["package.output"].include?(File::SEPARATOR)
+
           raise Errors::PackageOutputDirectory if File.directory?(fullpath)
 
           @app.call(env)
 
           @env[:ui].info I18n.t("vagrant.actions.general.package.compressing", fullpath: fullpath)
+
           copy_include_files
           setup_private_key
+          write_metadata_json
           compress
+        end
+
+        def package_with_folder_path
+          folder_path = File.expand_path("..", @fullpath)
+          create_box_folder(folder_path) unless File.directory?(folder_path)
+        end
+
+        def create_box_folder(folder_path)
+          @env[:ui].info(I18n.t("vagrant.actions.general.package.box_folder", folder_path: folder_path))
+          FileUtils.mkdir_p(folder_path)
         end
 
         def recover(env)
@@ -109,7 +123,7 @@ module Vagrant
             @env[:ui].info I18n.t("vagrant.actions.general.package.packaging", file: from)
             FileUtils.mkdir_p(to.parent)
 
-            # Copy direcotry contents recursively.
+            # Copy directory contents recursively.
             if File.directory?(from)
               FileUtils.cp_r(Dir.glob(from), to.parent, preserve: true)
             else
@@ -137,6 +151,22 @@ module Vagrant
             # Package!
             Util::Subprocess.execute("bsdtar", "-czf", output_path, *files)
           end
+        end
+
+        # Write the metadata file into the box so that the provider
+        # can be automatically detected when adding the box
+        def write_metadata_json
+          meta_path = File.join(@env["package.directory"], "metadata.json")
+          return if File.exist?(meta_path)
+
+          if @env[:machine] && @env[:machine].provider_name
+            provider_name = @env[:machine].provider_name
+          elsif @env[:env] && @env[:env].default_provider
+            provider_name = @env[:env].default_provider
+          else
+            return
+          end
+          File.write(meta_path, {provider: provider_name}.to_json)
         end
 
         # This will copy the generated private key into the box and use

@@ -111,7 +111,7 @@ module VagrantPlugins
             line = Vagrant::Util::ShellQuote.escape(line, "'")
             system(
               "echo '#{line}' | " +
-              "#{sudo_command}tee -a /etc/exports >/dev/null")
+              "#{sudo_command}/usr/bin/tee -a /etc/exports >/dev/null")
           end
 
           # We run restart here instead of "update" just in case nfsd
@@ -120,7 +120,7 @@ module VagrantPlugins
         end
 
         def self.nfs_exports_template(environment)
-          "nfs/exports"
+          "nfs/exports_bsd"
         end
 
         def self.nfs_installed(environment)

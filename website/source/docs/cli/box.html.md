@@ -16,12 +16,13 @@ This is the command used to manage (add, remove, etc.) [boxes](/docs/boxes.html)
 
 The main functionality of this command is exposed via even more subcommands:
 
-* `add`
-* `list`
-* `outdated`
-* `remove`
-* `repackage`
-* `update`
+* [`add`](#box-add)
+* [`list`](#box-list)
+* [`outdated`](#box-outdated)
+* [`prune`](#box-prune)
+* [`remove`](#box-remove)
+* [`repackage`](#box-repackage)
+* [`update`](#box-update)
 
 # Box Add
 
@@ -31,10 +32,10 @@ This adds a box with the given address to Vagrant. The address can be
 one of three things:
 
 * A shorthand name from the
-[public catalog of available Vagrant images](https://atlas.hashicorp.com/boxes/search),
+[public catalog of available Vagrant images](https://vagrantcloud.com/boxes/search),
 such as "hashicorp/precise64".
 
-* File path or HTTP URL to a box in a [catalog](https://atlas.hashicorp.com/boxes/search).
+* File path or HTTP URL to a box in a [catalog](https://vagrantcloud.com/boxes/search).
 For HTTP, basic authentication is supported and `http_proxy` environmental
 variables are respected. HTTPS is also supported.
 
@@ -98,8 +99,8 @@ you are not using a catalog).
   to be specified.
 
 <div class="alert alert-warning">
-  <strong>Checksums for versioned boxes or boxes from HashiCorp's Atlas:</strong>
-  For boxes from HashiCorp's Atlas, the checksums are embedded in the metadata
+  <strong>Checksums for versioned boxes or boxes from HashiCorp's Vagrant Cloud:</strong>
+  For boxes from HashiCorp's Vagrant Cloud, the checksums are embedded in the metadata
   of the box. The metadata itself is served over TLS and its format is validated.
 </div>
 
@@ -124,6 +125,22 @@ a box. This generally requires an internet connection.
 
 * `--global` - Check for updates for all installed boxes, not just the
   boxes for the current Vagrant environment.
+
+# Box Prune
+
+**Command: `vagrant box prune`**
+
+This command removes old versions of installed boxes. If the box is currently in use vagrant will ask for confirmation.
+
+## Options
+
+* `--provider PROVIDER` - The specific provider type for the boxes to destroy.
+
+* `--dry-run` - Only print the boxes that would be removed.
+
+* `--name NAME` - The specific box name to check for outdated versions.
+
+* `--force` - Destroy without confirmation even when box is in use.
 
 # Box Remove
 
@@ -150,24 +167,6 @@ with the `--all` flag.
   name. This is only required if a box is backed by multiple providers.
   If there is only a single provider, Vagrant will default to removing it.
 
-
-# Box prune
-
-**Command: `vagrant box prune`**
-
-This command removes old versions of installed boxes. If the box in currently in use vagrant will ask you if you to confirm.
-
-## Options
-
-* `--provider PROVIDER` - The specific provider type for the boxes to destroy.
-
-* `--dry-run` - Only print the boxes that would be removed.
-
-* `--name NAME` - The specific box name to check for outdated versions.
-
-* `--force` - Destroy without confirmation even when box is in use.
-
-
 # Box Repackage
 
 **Command: `vagrant box repackage NAME PROVIDER VERSION`**
@@ -188,9 +187,9 @@ This command updates the box for the current Vagrant environment if there
 are updates available. The command can also update a specific box (outside
 of an active Vagrant environment), by specifying the `--box` flag.
 
-Note that updating the box will not update an already-running Vagrant
+<small><i>Note that updating the box will not update an already-running Vagrant
 machine. To reflect the changes in the box, you will have to destroy and
-bring back up the Vagrant machine.
+bring back up the Vagrant machine.</i></small>
 
 If you just want to check if there are updates available, use the
 `vagrant box outdated` command.

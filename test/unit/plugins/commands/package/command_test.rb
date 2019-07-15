@@ -25,7 +25,7 @@ describe VagrantPlugins::CommandPackage::Command do
   let(:action_runner) { double("action_runner") }
 
   before do
-    iso_env.stub(action_runner: action_runner)
+    allow(iso_env).to receive(:action_runner).and_return(action_runner)
   end
 
   describe "#execute" do
@@ -55,6 +55,18 @@ describe VagrantPlugins::CommandPackage::Command do
 
         it "raises machine not found error" do
           expect{ package_command.execute }.to raise_error(Vagrant::Errors::MachineNotFound)
+        end
+      end
+
+      context "with --output option" do
+
+        let(:argv){ ['--output', 'package-output-folder/default'] }
+
+        it "packages default machine inside specified folder" do
+          expect(package_command).to receive(:package_vm).with(
+            a_machine_named('default'), :output => "package-output-folder/default"
+          )
+          package_command.execute
         end
       end
     end
@@ -97,6 +109,24 @@ describe VagrantPlugins::CommandPackage::Command do
         end
       end
     end
+  end
 
+  describe "#package_vm" do
+    context "calling the package action" do
+      let(:options) { {output: "test.box"} }
+      let(:expected_options) { {"package.output"=>"test.box"} }
+      let(:machine) { double("machine") }
+      let(:tmp_dir) { "/home/user/.vagrant.d/tmp/vagrant-package" }
+      let(:env) { {"export.temp_dir"=>tmp_dir} }
+
+      it "ensures that the package tmp dir is cleaned up" do
+        allow(FileUtils).to receive(:rm_rf).and_return(true)
+        allow(machine).to receive(:action).with(:package, expected_options).
+          and_return(env)
+
+        expect(FileUtils).to receive(:rm_rf).with(tmp_dir)
+        package_command.send(:package_vm, machine, options)
+      end
+    end
   end
 end

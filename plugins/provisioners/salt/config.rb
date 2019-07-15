@@ -6,9 +6,11 @@ module VagrantPlugins
     class Config < Vagrant.plugin("2", :config)
       ## salty-vagrant options
       attr_accessor :minion_config
+      attr_accessor :minion_json_config
       attr_accessor :minion_key
       attr_accessor :minion_pub
       attr_accessor :master_config
+      attr_accessor :master_json_config
       attr_accessor :master_key
       attr_accessor :master_pub
       attr_accessor :grains_config
@@ -24,6 +26,8 @@ module VagrantPlugins
       attr_accessor :log_level
       attr_accessor :masterless
       attr_accessor :minion_id
+      attr_accessor :salt_call_args
+      attr_accessor :salt_args
 
       ## bootstrap options
       attr_accessor :temp_config_dir
@@ -34,14 +38,17 @@ module VagrantPlugins
       attr_accessor :no_minion
       attr_accessor :bootstrap_options
       attr_accessor :version
+      attr_accessor :python_version
       attr_accessor :run_service
       attr_accessor :master_id
 
       def initialize
         @minion_config = UNSET_VALUE
+        @minion_json_config = UNSET_VALUE
         @minion_key = UNSET_VALUE
         @minion_pub = UNSET_VALUE
         @master_config = UNSET_VALUE
+        @master_json_config = UNSET_VALUE
         @master_key = UNSET_VALUE
         @master_pub = UNSET_VALUE
         @grains_config = UNSET_VALUE
@@ -64,8 +71,11 @@ module VagrantPlugins
         @masterless = UNSET_VALUE
         @minion_id = UNSET_VALUE
         @version = UNSET_VALUE
+        @python_version = UNSET_VALUE
         @run_service = UNSET_VALUE
         @master_id = UNSET_VALUE
+        @salt_call_args = UNSET_VALUE
+        @salt_args = UNSET_VALUE
       end
 
       def finalize!
@@ -89,8 +99,13 @@ module VagrantPlugins
         @masterless         = false if @masterless == UNSET_VALUE
         @minion_id          = nil if @minion_id == UNSET_VALUE
         @version            = nil if @version == UNSET_VALUE
+        @python_version     = nil if @python_version == UNSET_VALUE
         @run_service        = nil if @run_service == UNSET_VALUE
         @master_id          = nil if @master_id == UNSET_VALUE
+        @salt_call_args     = nil if @salt_call_args == UNSET_VALUE
+        @salt_args          = nil if @salt_args == UNSET_VALUE
+        @minion_json_config = nil if @minion_json_config == UNSET_VALUE
+        @master_json_config = nil if @master_json_config == UNSET_VALUE
 
         # NOTE: Optimistic defaults are set in the provisioner. UNSET_VALUEs
         # are converted there to allow proper detection of unset values.
@@ -144,6 +159,29 @@ module VagrantPlugins
 
         if @install_master && !@no_minion && !@seed_master && @run_highstate
           errors << I18n.t("vagrant.provisioners.salt.must_accept_keys")
+        end
+
+        if @salt_call_args && !@salt_call_args.is_a?(Array)
+          errors << I18n.t("vagrant.provisioners.salt.args_array")
+        end
+
+        if @salt_args && !@salt_args.is_a?(Array)
+          errors << I18n.t("vagrant.provisioners.salt.args_array")
+        end
+
+        if @python_version && @python_version.is_a?(String) && !@python_version.scan(/\D/).empty?
+          errors << I18n.t("vagrant.provisioners.salt.python_version")
+        end
+
+        if @python_version && !(@python_version.is_a?(Integer) || @python_version.is_a?(String))
+          errors << I18n.t("vagrant.provisioners.salt.python_version")
+        end
+
+        # install_type is not supported in a Windows environment
+        if machine.config.vm.communicator != :winrm
+          if @version && !@install_type
+            errors << I18n.t("vagrant.provisioners.salt.version_type_missing")
+          end
         end
 
         return {"salt provisioner" => errors}

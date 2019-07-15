@@ -5,7 +5,14 @@ require "vagrant/util/presence"
 module VagrantPlugins
   module LoginCommand
     class Client
+      APP = "app".freeze
+
       include Vagrant::Util::Presence
+
+      attr_accessor :username_or_email
+      attr_accessor :password
+      attr_reader :two_factor_default_delivery_method
+      attr_reader :two_factor_delivery_methods
 
       # Initializes a login client with the given Vagrant::Environment.
       #
@@ -35,20 +42,67 @@ module VagrantPlugins
           RestClient.get(url, content_type: :json)
           true
         end
+      rescue Errors::Unauthorized
+        false
       end
 
       # Login logs a user in and returns the token for that user. The token
       # is _not_ stored unless {#store_token} is called.
       #
-      # @param [String] user
-      # @param [String] pass
+      # @param [String] description
+      # @param [String] code
       # @return [String] token The access token, or nil if auth failed.
-      def login(user, pass)
-        @logger.info("Logging in '#{user}'")
+      def login(description: nil, code: nil)
+        @logger.info("Logging in '#{username_or_email}'")
 
+        response = post(
+          "/api/v1/authenticate", {
+            user: {
+              login: username_or_email,
+              password: password
+            },
+            token: {
+              description: description
+            },
+            two_factor: {
+              code: code
+            }
+          }
+        )
+
+        response["token"]
+      end
+
+      # Requests a 2FA code
+      # @param [String] delivery_method
+      def request_code(delivery_method)
+        @env.ui.warn("Requesting 2FA code via #{delivery_method.upcase}...")
+
+        response = post(
+          "/api/v1/two-factor/request-code", {
+            user: {
+              login: username_or_email,
+              password: password
+            },
+            two_factor: {
+              delivery_method: delivery_method.downcase
+            }
+          }
+        )
+
+        two_factor = response['two_factor']
+        obfuscated_destination = two_factor['obfuscated_destination']
+
+        @env.ui.success("2FA code sent to #{obfuscated_destination}.")
+      end
+
+      # Issues a post to a Vagrant Cloud path with the given payload.
+      # @param [String] path
+      # @param [Hash] payload
+      # @return [Hash] response data
+      def post(path, payload)
         with_error_handling do
-          url      = "#{Vagrant.server_url}/api/v1/authenticate"
-          request  = { "user" => { "login" => user, "password" => pass } }
+          url = File.join(Vagrant.server_url, path)
 
           proxy   = nil
           proxy ||= ENV["HTTPS_PROXY"] || ENV["https_proxy"]
@@ -58,7 +112,7 @@ module VagrantPlugins
           response = RestClient::Request.execute(
             method: :post,
             url: url,
-            payload: JSON.dump(request),
+            payload: JSON.dump(payload),
             proxy: proxy,
             headers: {
               accept: :json,
@@ -67,8 +121,7 @@ module VagrantPlugins
             },
           )
 
-          data = JSON.load(response.to_s)
-          data["token"]
+          JSON.load(response.to_s)
         end
       end
 
@@ -86,33 +139,36 @@ module VagrantPlugins
       end
 
       # Reads the access token if there is one. This will first read the
-      # `ATLAS_TOKEN` environment variable and then fallback to the stored
+      # `VAGRANT_CLOUD_TOKEN` environment variable and then fallback to the stored
       # access token on disk.
       #
       # @return [String]
       def token
-        if present?(ENV["ATLAS_TOKEN"]) && token_path.exist?
+        if present?(ENV["VAGRANT_CLOUD_TOKEN"]) && token_path.exist?
           @env.ui.warn <<-EOH.strip
-Vagrant detected both the ATLAS_TOKEN environment variable and a Vagrant login
-token are present on this system. The ATLAS_TOKEN environment variable takes
+Vagrant detected both the VAGRANT_CLOUD_TOKEN environment variable and a Vagrant login
+token are present on this system. The VAGRANT_CLOUD_TOKEN environment variable takes
 precedence over the locally stored token. To remove this error, either unset
-the ATLAS_TOKEN environment variable or remove the login token stored on disk:
+the VAGRANT_CLOUD_TOKEN environment variable or remove the login token stored on disk:
 
     ~/.vagrant.d/data/vagrant_login_token
 
-In general, the ATLAS_TOKEN is more preferred because it is respected by all
-HashiCorp products.
 EOH
         end
 
-        if present?(ENV["ATLAS_TOKEN"])
+        if present?(ENV["VAGRANT_CLOUD_TOKEN"])
           @logger.debug("Using authentication token from environment variable")
-          return ENV["ATLAS_TOKEN"]
+          return ENV["VAGRANT_CLOUD_TOKEN"]
         end
 
         if token_path.exist?
           @logger.debug("Using authentication token from disk at #{token_path}")
           return token_path.read.strip
+        end
+
+        if present?(ENV["ATLAS_TOKEN"])
+          @logger.warn("ATLAS_TOKEN detected within environment. Using ATLAS_TOKEN in place of VAGRANT_CLOUD_TOKEN.")
+          return ENV["ATLAS_TOKEN"]
         end
 
         @logger.debug("No authentication token in environment or #{token_path}")
@@ -126,14 +182,33 @@ EOH
         yield
       rescue RestClient::Unauthorized
         @logger.debug("Unauthorized!")
-        false
+        raise Errors::Unauthorized
+      rescue RestClient::BadRequest => e
+        @logger.debug("Bad request:")
+        @logger.debug(e.message)
+        @logger.debug(e.backtrace.join("\n"))
+        parsed_response = JSON.parse(e.response)
+        errors = parsed_response["errors"].join("\n")
+        raise Errors::ServerError, errors: errors
       rescue RestClient::NotAcceptable => e
         @logger.debug("Got unacceptable response:")
         @logger.debug(e.message)
         @logger.debug(e.backtrace.join("\n"))
 
+        parsed_response = JSON.parse(e.response)
+
+        if two_factor = parsed_response['two_factor']
+          store_two_factor_information two_factor
+
+          if two_factor_default_delivery_method != APP
+            request_code two_factor_default_delivery_method
+          end
+
+          raise Errors::TwoFactorRequired
+        end
+
         begin
-          errors = JSON.parse(e.response)["errors"].join("\n")
+          errors = parsed_response["errors"].join("\n")
           raise Errors::ServerError, errors: errors
         rescue JSON::ParserError; end
 
@@ -145,6 +220,33 @@ EOH
 
       def token_path
         @env.data_dir.join("vagrant_login_token")
+      end
+
+      def store_two_factor_information(two_factor)
+        @two_factor_default_delivery_method =
+          two_factor['default_delivery_method']
+
+        @two_factor_delivery_methods =
+          two_factor['delivery_methods']
+
+        @env.ui.warn "2FA is enabled for your account."
+        if two_factor_default_delivery_method == APP
+          @env.ui.info "Enter the code from your authenticator."
+        else
+          @env.ui.info "Default method is " \
+            "'#{two_factor_default_delivery_method}'."
+        end
+
+        other_delivery_methods =
+          two_factor_delivery_methods - [APP]
+
+        if other_delivery_methods.any?
+          other_delivery_methods_sentence = other_delivery_methods
+            .map { |word| "'#{word}'" }
+            .join(' or ')
+          @env.ui.info "You can also type #{other_delivery_methods_sentence} " \
+            "to request a new code."
+        end
       end
     end
   end

@@ -18,7 +18,7 @@ Box files made for Vagrant 1.0.x (the VirtualBox export `tar` files) continue
 to work with Vagrant today. When Vagrant encounters one of these old boxes,
 it automatically updates it internally to the new format.
 
-Today, there are two different components:
+Today, there are three different components:
 
 * Box File - This is a compressed (`tar`, `tar.gz`, `zip`) file that is specific
   to a single provider and can contain anything. Vagrant core does not ever
@@ -27,14 +27,18 @@ Today, there are two different components:
   box file and so on.
 
 * Box Catalog Metadata - This is a JSON document (typically exchanged
-  during interactions with [HashiCorp's Atlas](/docs/other/atlas.html))
+  during interactions with [HashiCorp's Vagrant Cloud](/docs/vagrant-cloud))
   that specifies the name of the box, a description, available
   versions, available providers, and URLs to the actual box files
   (next component) for each provider and version. If this catalog
   metadata does not exist, a box file can still be added directly, but
   it will not support versioning and updating.
 
-Each component is covered in more detail below.
+* Box Information - This is a JSON document that can provide additional
+  information about the box that displays when a user runs
+  `vagrant box list -i`. More information is provided [here](/docs/boxes/info.html).
+
+The first two components are covered in more detail below.
 
 ## Box File
 
@@ -82,8 +86,8 @@ providers from a single file, and more.
 
 <div class="alert alert-block alert-info">
   <strong>You do not need to manually make the metadata.</strong> If you
-  have an account with <a href="/docs/other/atlas.html">HashiCorp's Atlas</a>, you
-  can create boxes there, and HashiCorp's Atlas automatically creates
+  have an account with <a href="/docs/vagrant-cloud">HashiCorp's Vagrant Cloud</a>, you
+  can create boxes there, and HashiCorp's Vagrant Cloud automatically creates
   the metadata for you. The format is still documented here.
 </div>
 

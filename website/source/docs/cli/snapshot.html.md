@@ -21,12 +21,12 @@ Vagrant will give you an error message.
 
 The main functionality of this command is exposed via even more subcommands:
 
-* `push`
-* `pop`
-* `save`
-* `restore`
-* `list`
-* `delete`
+* [`push`](#snapshot-push)
+* [`pop`](#snapshot-pop)
+* [`save`](#snapshot-save)
+* [`restore`](#snapshot-restore)
+* [`list`](#snapshot-list)
+* [`delete`](#snapshot-delete)
 
 # Snapshot Push
 
@@ -56,6 +56,8 @@ the pushed state.
 * `--no-delete` - Prevents deletion of the snapshot after restoring
     (so that you can restore to the same point again later).
 
+* `--no-start` - Prevents the guest from being started after restore
+
 # Snapshot Save
 
 **Command: `vagrant snapshot save [vm-name] NAME`**
@@ -72,6 +74,8 @@ This command restores the named snapshot.
 * `--[no-]provision` - Force the provisioners to run (or prevent them
     from doing so).
 
+* `--no-start` - Prevents the guest from being started after restore
+
 # Snapshot List
 
 **Command: `vagrant snapshot list`**
@@ -80,7 +84,7 @@ This command will list all the snapshots taken.
 
 # Snapshot Delete
 
-**Command: `vagrant snapshot delete NAME`**
+**Command: `vagrant snapshot delete [vm-name] NAME`**
 
 This command will delete the named snapshot.
 

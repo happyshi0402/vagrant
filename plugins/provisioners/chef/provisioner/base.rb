@@ -24,7 +24,7 @@ module VagrantPlugins
 
           @logger = Log4r::Logger.new("vagrant::provisioners::chef")
 
-          if !present?(@config.node_name)
+          if @config.respond_to?(:node_name) && !present?(@config.node_name)
             # First attempt to get the node name from the hostname, and if that
             # is not present, generate/retrieve a random hostname.
             hostname = @machine.config.vm.hostname
@@ -58,6 +58,7 @@ module VagrantPlugins
             product: config.product,
             channel: config.channel,
             version: config.version,
+            omnibus_url: config.omnibus_url,
             force: config.install == :force,
             download_path:  config.installer_download_path
           )
@@ -68,7 +69,7 @@ module VagrantPlugins
           # Checks for the existence of chef binary and error if it
           # doesn't exist.
           if windows?
-            command = "if ((&'#{binary}' -v) -Match 'Chef: *'){ exit 0 } else { exit 1 }"
+            command = "if ((&'#{binary}' -v) -Match 'Chef*'){ exit 0 } else { exit 1 }"
           else
             command = "sh -c 'command -v #{binary}'"
           end

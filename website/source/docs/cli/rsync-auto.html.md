@@ -3,7 +3,7 @@ layout: "docs"
 page_title: "vagrant rsync-auto - Command-Line Interface"
 sidebar_current: "cli-rsyncauto"
 description: |-
-  The "vagrant rsync-auth" command watches all local directories of any rsync
+  The "vagrant rsync-auto" command watches all local directories of any rsync
   configured synced folders and automatically initiates an rsync transfer when
   changes are detected.
 ---
@@ -21,6 +21,10 @@ The change detection is optimized to use platform-specific APIs to listen
 for filesystem changes, and does not simply poll the directory.
 
 ## Options
+
+* `--[no-]rsync-chown` - Use rsync to modify ownership of transferred files. Enabling
+    this option can result in faster completion due to a secondary process not being
+    required to update ownership. By default this is disabled.
 
 * `--[no-]poll` - Force Vagrant to watch for changes using filesystem
     polling instead of filesystem events. This is required for some filesystems

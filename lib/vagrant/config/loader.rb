@@ -101,6 +101,18 @@ module Vagrant
         warnings = []
         errors   = []
 
+        if !@sources[:root].nil? && @sources[:root].eql?(@sources[:home])
+          # Vagrants home dir is set to the same dir as its project directory
+          # so we don't want to load and merge the same Vagrantfile config
+          # and execute its settings/procs twice
+          #
+          # Note: This protection won't work if there are two separate but
+          # identical Vagrantfiles in the home and project dir
+          @logger.info("Duplicate Vagrantfile config objects detected in :root and :home.")
+          @sources.delete(:home)
+          @logger.info("Removed :home config from being loaded")
+        end
+
         order.each do |key|
           next if !@sources.key?(key)
 
@@ -110,7 +122,27 @@ module Vagrant
 
               # Get the proper version loader for this version and load
               version_loader = @versions.get(version)
-              version_config = version_loader.load(proc)
+              begin
+                version_config = version_loader.load(proc)
+              rescue NameError => e
+                line = "(unknown)"
+                path = "(unknown)"
+                if e.backtrace && e.backtrace[0]
+                  backtrace_tokens = e.backtrace[0].split(":")
+                  path = backtrace_tokens[0]
+                  backtrace_tokens.each do |part|
+                    if part =~ /\d+/
+                      line = part.to_i
+                      break
+                    end
+                  end
+                end
+
+                raise Errors::VagrantfileNameError,
+                  path: path,
+                  line: line,
+                  message: e.message.sub(/' for .*$/, "'")
+              end
 
               # Store the errors/warnings associated with loading this
               # configuration. We'll store these for later.

@@ -1,3 +1,4 @@
+require 'etc'
 require 'logger'
 require 'pathname'
 require 'stringio'
@@ -36,6 +37,7 @@ module VagrantPlugins
         Errno::ECONNRESET,
         Errno::ENETUNREACH,
         Errno::EHOSTUNREACH,
+        Errno::EPIPE,
         Net::SSH::Disconnect,
         Timeout::Error
       ]
@@ -67,14 +69,16 @@ module VagrantPlugins
           end
 
           # Got it! Let the user know what we're connecting to.
-          @machine.ui.detail("SSH address: #{ssh_info[:host]}:#{ssh_info[:port]}")
-          @machine.ui.detail("SSH username: #{ssh_info[:username]}")
-          ssh_auth_type = "private key"
-          ssh_auth_type = "password" if ssh_info[:password]
-          @machine.ui.detail("SSH auth method: #{ssh_auth_type}")
+          if !@ssh_info_notification
+            @machine.ui.detail("SSH address: #{ssh_info[:host]}:#{ssh_info[:port]}")
+            @machine.ui.detail("SSH username: #{ssh_info[:username]}")
+            ssh_auth_type = "private key"
+            ssh_auth_type = "password" if ssh_info[:password]
+            @machine.ui.detail("SSH auth method: #{ssh_auth_type}")
+            @ssh_info_notification = true
+          end
 
-          last_message = nil
-          last_message_repeat_at = 0
+          previous_messages = {}
           while true
             message  = nil
             begin
@@ -121,14 +125,13 @@ module VagrantPlugins
             if message
               message_at   = Time.now.to_f
               show_message = true
-              if last_message == message
-                show_message = (message_at - last_message_repeat_at) > 10.0
+              if previous_messages[message]
+                show_message = (message_at - previous_messages[message]) > 10.0
               end
 
               if show_message
                 @machine.ui.detail("Warning: #{message} Retrying...")
-                last_message = message
-                last_message_repeat_at = message_at
+                previous_messages[message] = message_at
               end
             end
           end
@@ -190,6 +193,11 @@ module VagrantPlugins
           # machine automatically picks it up.
           @machine.data_dir.join("private_key").open("w+") do |f|
             f.write(priv)
+          end
+
+          # Adjust private key file permissions if host provides capability
+          if @machine.env.host.capability?(:set_ssh_key_permissions)
+            @machine.env.host.capability(:set_ssh_key_permissions, @machine.data_dir.join("private_key"))
           end
 
           # Remove the old key if it exists
@@ -282,14 +290,47 @@ module VagrantPlugins
       def upload(from, to)
         @logger.debug("Uploading: #{from} to #{to}")
 
-        scp_connect do |scp|
-          if File.directory?(from)
-            # Recurisvely upload directories
-            scp.upload!(from, to, recursive: true)
+        if File.directory?(from)
+          if from.end_with?(".")
+            @logger.debug("Uploading directory contents of: #{from}")
+            from = from.sub(/\.$/, "")
           else
-            # Open file read only to fix issue [GH-1036]
-            scp.upload!(File.open(from, "r"), to)
+            @logger.debug("Uploading full directory container of: #{from}")
+            to = File.join(to, File.basename(File.expand_path(from)))
           end
+        end
+
+        scp_connect do |scp|
+          uploader = lambda do |path, remote_dest=nil|
+            if File.directory?(path)
+              Dir.new(path).each do |entry|
+                next if entry == "." || entry == ".."
+                full_path = File.join(path, entry)
+                dest = File.join(to, path.sub(/^#{Regexp.escape(from)}/, ""))
+                create_remote_directory(dest)
+                uploader.call(full_path, dest)
+              end
+            else
+              if remote_dest
+                dest = File.join(remote_dest, File.basename(path))
+              else
+                dest = to
+                if to.end_with?(File::SEPARATOR)
+                  dest = File.join(to, File.basename(path))
+                end
+              end
+              @logger.debug("Ensuring remote directory exists for destination upload")
+              create_remote_directory(File.dirname(dest))
+              @logger.debug("Uploading file #{path} to remote #{dest}")
+              upload_file = File.open(path, "rb")
+              begin
+                scp.upload!(upload_file, dest)
+              ensure
+                upload_file.close
+              end
+            end
+          end
+          uploader.call(from)
         end
       rescue RuntimeError => e
         # Net::SCP raises a runtime error for this so the only way we have
@@ -302,6 +343,15 @@ module VagrantPlugins
         raise Vagrant::Errors::SCPPermissionDenied,
           from: from.to_s,
           to: to.to_s
+      end
+
+      def reset!
+        if @connection
+          @connection.close
+          @connection = nil
+        end
+        @ssh_info_notification = true # suppress ssh info output
+        wait_for_ready(5)
       end
 
       protected
@@ -348,6 +398,14 @@ module VagrantPlugins
         auth_methods << "publickey" if ssh_info[:private_key_path]
         auth_methods << "password" if ssh_info[:password]
 
+        # yanked directly from ruby's Net::SSH, but with `none` last
+        # TODO: Remove this once Vagrant has updated its dependency on Net:SSH
+        # to be > 4.1.0, which should include this fix.
+        cipher_array = Net::SSH::Transport::Algorithms::ALGORITHMS[:encryption].dup
+        if cipher_array.delete("none")
+          cipher_array.push("none")
+        end
+
         # Build the options we'll use to initiate the connection via Net::SSH
         common_connect_opts = {
           auth_methods:          auth_methods,
@@ -355,12 +413,13 @@ module VagrantPlugins
           forward_agent:         ssh_info[:forward_agent],
           send_env:              ssh_info[:forward_env],
           keys_only:             ssh_info[:keys_only],
-          paranoid:              ssh_info[:paranoid],
+          verify_host_key:       ssh_info[:verify_host_key],
           password:              ssh_info[:password],
           port:                  ssh_info[:port],
           timeout:               15,
           user_known_hosts_file: [],
           verbose:               :debug,
+          encryption:            cipher_array,
         }
 
         # Connect to SSH, giving it a few tries
@@ -386,6 +445,14 @@ module VagrantPlugins
 
                 if ssh_info[:proxy_command]
                   connect_opts[:proxy] = Net::SSH::Proxy::Command.new(ssh_info[:proxy_command])
+                end
+
+                if ssh_info[:config]
+                  connect_opts[:config] = ssh_info[:config]
+                end
+
+                if ssh_info[:remote_user]
+                  connect_opts[:remote_user] = ssh_info[:remote_user]
                 end
 
                 @logger.info("Attempting to connect to SSH...")
@@ -539,14 +606,14 @@ module VagrantPlugins
                 stderr_data_buffer << data
                 marker_index = stderr_data_buffer.index(CMD_GARBAGE_MARKER)
                 if marker_index
-                  marker_found = true
+                  stderr_marker_found = true
                   stderr_data_buffer.slice!(0, marker_index + CMD_GARBAGE_MARKER.size)
                   data.replace(stderr_data_buffer)
-                  data_buffer = nil
+                  stderr_data_buffer = nil
                 end
               end
 
-              if block_given? && marker_found && !data.empty?
+              if block_given? && stderr_marker_found && !data.empty?
                 yield :stderr, data
               end
             end
@@ -695,6 +762,10 @@ module VagrantPlugins
       def generate_environment_export(env_key, env_value)
         template = machine_config_ssh.export_command_template
         template.sub("%ENV_KEY%", env_key).sub("%ENV_VALUE%", env_value) + "\n"
+      end
+
+      def create_remote_directory(dir)
+        execute("mkdir -p \"#{dir}\"")
       end
 
       def machine_config_ssh

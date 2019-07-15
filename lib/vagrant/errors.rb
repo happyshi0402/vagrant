@@ -108,6 +108,10 @@ module Vagrant
       error_key(:active_machine_with_different_provider)
     end
 
+    class AliasInvalidError < VagrantError
+      error_key(:alias_invalid_error)
+    end
+
     class BatchMultiError < VagrantError
       error_key(:batch_multi_error)
     end
@@ -154,6 +158,10 @@ module Vagrant
 
     class BoxConfigChangingBox < VagrantError
       error_key(:box_config_changing_box)
+    end
+
+    class BoxFileNotExist < VagrantError
+      error_key(:box_file_not_exist)
     end
 
     class BoxMetadataCorrupted < VagrantError
@@ -296,6 +304,10 @@ module Vagrant
       error_key(:command_deprecated)
     end
 
+    class CommandSuspendAllArgs < VagrantError
+      error_key(:command_suspend_all_arguments)
+    end
+
     class CommandUnavailable < VagrantError
       error_key(:command_unavailable)
     end
@@ -370,6 +382,10 @@ module Vagrant
 
     class HomeDirectoryUnknownVersion < VagrantError
       error_key(:home_dir_unknown_version)
+    end
+
+    class HypervVirtualBoxError < VagrantError
+      error_key(:hyperv_virtualbox_error)
     end
 
     class ForwardPortAdapterNotFound < VagrantError
@@ -448,6 +464,10 @@ module Vagrant
       error_key(:collides, "vagrant.actions.vm.host_only_network")
     end
 
+    class NetworkAddressInvalid < VagrantError
+      error_key(:network_address_invalid)
+    end
+
     class NetworkDHCPAlreadyAttached < VagrantError
       error_key(:dhcp_already_attached, "vagrant.actions.vm.network")
     end
@@ -466,6 +486,10 @@ module Vagrant
 
     class NFSBadExports < VagrantError
       error_key(:nfs_bad_exports)
+    end
+
+    class NFSDupePerms < VagrantError
+      error_key(:nfs_dupe_permissions)
     end
 
     class NFSExportsFailed < VagrantError
@@ -536,6 +560,18 @@ module Vagrant
       error_key(:requires_directory, "vagrant.actions.general.package")
     end
 
+    class PowerShellNotFound < VagrantError
+      error_key(:powershell_not_found)
+    end
+
+    class PowerShellInvalidVersion < VagrantError
+      error_key(:powershell_invalid_version)
+    end
+
+    class PowerShellError < VagrantError
+      error_key(:powershell_error, "vagrant_ps.errors.powershell_error")
+    end
+
     class ProviderCantInstall < VagrantError
       error_key(:provider_cant_install)
     end
@@ -550,6 +586,10 @@ module Vagrant
 
     class ProviderNotFound < VagrantError
       error_key(:provider_not_found)
+    end
+
+    class ProviderNotFoundSuggestion < VagrantError
+      error_key(:provider_not_found_suggestion)
     end
 
     class ProviderNotUsable < VagrantError
@@ -604,6 +644,14 @@ module Vagrant
       error_key(:plugin_source_error)
     end
 
+    class PluginNoLocalError < VagrantError
+      error_key(:plugin_no_local_error)
+    end
+
+    class PluginMissingLocalError < VagrantError
+      error_key(:plugin_missing_local_error)
+    end
+
     class PushesNotDefined < VagrantError
       error_key(:pushes_not_defined)
     end
@@ -618,6 +666,10 @@ module Vagrant
 
     class PushStrategyNotProvided < VagrantError
       error_key(:push_strategy_not_provided)
+    end
+
+    class RSyncPostCommandError < VagrantError
+      error_key(:rsync_post_command_error)
     end
 
     class RSyncError < VagrantError
@@ -748,12 +800,56 @@ module Vagrant
       error_key(:synced_folder_unusable)
     end
 
+    class TriggersBadExitCodes < VagrantError
+      error_key(:triggers_bad_exit_codes)
+    end
+
+    class TriggersGuestNotExist < VagrantError
+      error_key(:triggers_guest_not_exist)
+    end
+
+    class TriggersGuestNotRunning < VagrantError
+      error_key(:triggers_guest_not_running)
+    end
+
+    class TriggersNoBlockGiven < VagrantError
+      error_key(:triggers_no_block_given)
+    end
+
+    class TriggersNoStageGiven < VagrantError
+      error_key(:triggers_no_stage_given)
+    end
+
     class UIExpectsTTY < VagrantError
       error_key(:ui_expects_tty)
     end
 
     class UnimplementedProviderAction < VagrantError
       error_key(:unimplemented_provider_action)
+    end
+
+    class UploadInvalidCompressionType < VagrantError
+      error_key(:upload_invalid_compression_type)
+    end
+
+    class UploadMissingExtractCapability < VagrantError
+      error_key(:upload_missing_extract_capability)
+    end
+
+    class UploadMissingTempCapability < VagrantError
+      error_key(:upload_missing_temp_capability)
+    end
+
+    class UploadSourceMissing < VagrantError
+      error_key(:upload_source_missing)
+    end
+
+    class UploaderError < VagrantError
+      error_key(:uploader_error)
+    end
+
+    class UploaderInterrupted < UploaderError
+      error_key(:uploader_interrupted)
     end
 
     class VagrantInterrupt < VagrantError
@@ -768,8 +864,16 @@ module Vagrant
       error_key(:vagrantfile_load_error)
     end
 
+    class VagrantfileNameError < VagrantError
+      error_key(:vagrantfile_name_error)
+    end
+
     class VagrantfileSyntaxError < VagrantError
       error_key(:vagrantfile_syntax_error)
+    end
+
+    class VagrantfileTemplateNotFoundError < VagrantError
+      error_key(:vagrantfile_template_not_found_error)
     end
 
     class VagrantfileWriteError < VagrantError
@@ -790,10 +894,6 @@ module Vagrant
 
     class VBoxManageNotFoundError < VagrantError
       error_key(:vboxmanage_not_found_error)
-    end
-
-    class VBoxManageNotFoundWSLError < VagrantError
-      error_key(:vboxmanage_not_found_wsl_error)
     end
 
     class VirtualBoxBrokenVersion040214 < VagrantError
@@ -904,6 +1004,10 @@ module Vagrant
       error_key(:power_off, "vagrant.actions.vm.export")
     end
 
+    class WinRMInvalidCommunicator < VagrantError
+      error_key(:winrm_invalid_communicator)
+    end
+
     class WSLVagrantVersionMismatch < VagrantError
       error_key(:wsl_vagrant_version_mismatch)
     end
@@ -914,6 +1018,10 @@ module Vagrant
 
     class WSLVirtualBoxWindowsAccessError < VagrantError
       error_key(:wsl_virtualbox_windows_access)
+    end
+
+    class WSLRootFsNotFoundError < VagrantError
+      error_key(:wsl_rootfs_not_found_error)
     end
   end
 end

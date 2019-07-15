@@ -78,5 +78,103 @@ describe VagrantPlugins::Salt::Config do
         expect(result[error_key]).to be_empty
       end
     end
+
+    context "salt_call_args" do
+      it "fails if salt_call_args is not an array" do
+        subject.salt_call_args = "--flags"
+        subject.finalize!
+
+        result = subject.validate(machine)
+        expect(result[error_key]).to_not be_empty
+      end
+
+      it "is valid if is set and not missing" do
+        subject.salt_call_args = ["--flags"]
+        subject.finalize!
+
+        result = subject.validate(machine)
+        expect(result[error_key]).to be_empty
+      end
+    end
+
+    context "salt_args" do
+      it "fails if not an array" do
+        subject.salt_args = "--flags"
+        subject.finalize!
+
+        result = subject.validate(machine)
+        expect(result[error_key]).to_not be_empty
+      end
+
+      it "is valid if is set and not missing" do
+        subject.salt_args = ["--flags"]
+        subject.finalize!
+
+        result = subject.validate(machine)
+        expect(result[error_key]).to be_empty
+      end
+    end
+
+    context "python_version" do
+      it "is valid if is set and not missing" do
+        subject.python_version = "2"
+        subject.finalize!
+
+        result = subject.validate(machine)
+        expect(result[error_key]).to be_empty
+      end
+
+      it "can be a string" do
+        subject.python_version = "2"
+        subject.finalize!
+
+        result = subject.validate(machine)
+        expect(result[error_key]).to be_empty
+      end
+
+      it "can be an integer" do
+        subject.python_version = 2
+        subject.finalize!
+
+        result = subject.validate(machine)
+        expect(result[error_key]).to be_empty
+      end
+
+      it "is not a number that is not an integer" do
+        subject.python_version = 2.7
+        subject.finalize!
+
+        result = subject.validate(machine)
+        expect(result[error_key]).to_not be_empty
+      end
+
+      it "is not a string that does not parse to an integer" do
+        subject.python_version = '2.7'
+        subject.finalize!
+
+        result = subject.validate(machine)
+        expect(result[error_key]).to_not be_empty
+      end
+    end
+
+    context "version" do
+      it "is valid if is set without install_type on Windows" do
+        allow(machine.config.vm).to receive(:communicator).and_return(:winrm)
+
+        subject.version = "2018.3.3"
+        subject.finalize!
+
+        result = subject.validate(machine)
+        expect(result[error_key]).to be_empty
+      end
+
+      it "is invalid if is set without install_type on Linux" do
+        subject.version = "2018.3.3"
+        subject.finalize!
+
+        result = subject.validate(machine)
+        expect(result[error_key]).to_not be_empty
+      end
+    end
   end
 end

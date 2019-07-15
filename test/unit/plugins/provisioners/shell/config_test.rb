@@ -30,7 +30,7 @@ describe "VagrantPlugins::Shell::Config" do
       expect(result["shell provisioner"]).to eq([])
     end
 
-    it "passes with fixnum args" do
+    it "passes with integer args" do
       subject.path = file_that_exists
       subject.args = 1
       subject.finalize!
@@ -109,10 +109,43 @@ describe "VagrantPlugins::Shell::Config" do
         I18n.t("vagrant.provisioners.shell.env_must_be_a_hash")
       )
     end
+
+    it "returns an error if file and script are unset" do
+      subject.finalize!
+      result = subject.validate(machine)
+      expect(result["shell provisioner"]).to include(
+        I18n.t("vagrant.provisioners.shell.no_path_or_inline")
+      )
+    end
+
+    it "returns an error if inline and path are both set" do
+      subject.inline = "script"
+      subject.path = "script"
+      result = subject.validate(machine)
+      expect(result["shell provisioner"]).to include(
+        I18n.t("vagrant.provisioners.shell.path_and_inline_set")
+      )
+    end
+
+    it "returns no error when inline and path are unset but reset is true" do
+      subject.reset = true
+      subject.finalize!
+
+      result = subject.validate(machine)
+      expect(result["shell provisioner"]).to be_empty
+    end
+
+    it "returns no error when inline and path are unset but reboot is true" do
+      subject.reboot = true
+      subject.finalize!
+
+      result = subject.validate(machine)
+      expect(result["shell provisioner"]).to be_empty
+    end
   end
 
   describe 'finalize!' do
-    it 'changes fixnum args into strings' do
+    it 'changes integer args into strings' do
       subject.path = file_that_exists
       subject.args = 1
       subject.finalize!
@@ -120,12 +153,33 @@ describe "VagrantPlugins::Shell::Config" do
       expect(subject.args).to eq '1'
     end
 
-    it 'changes fixnum args in arrays into strings' do
+    it 'changes integer args in arrays into strings' do
       subject.path = file_that_exists
       subject.args = ["string", 1, 2]
       subject.finalize!
 
       expect(subject.args).to eq ["string", '1', '2']
+    end
+
+    context "with sensitive option enabled" do
+      it 'marks environment variable values sensitive' do
+        subject.env = {"KEY1" => "VAL1", "KEY2" => "VAL2"}
+        subject.sensitive = true
+
+        expect(Vagrant::Util::CredentialScrubber).to receive(:sensitive).with("VAL1")
+        expect(Vagrant::Util::CredentialScrubber).to receive(:sensitive).with("VAL2")
+        subject.finalize!
+      end
+    end
+
+    context "with sensitive option disabled" do
+      it 'does not mark environment variable values sensitive' do
+        subject.env = {"KEY1" => "VAL1", "KEY2" => "VAL2"}
+        subject.sensitive = false
+
+        expect(Vagrant::Util::CredentialScrubber).not_to receive(:sensitive)
+        subject.finalize!
+      end
     end
   end
 end

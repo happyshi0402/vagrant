@@ -22,7 +22,7 @@ you want to have a UI. Common use cases include wanting to see a browser
 that may be running in the machine, or debugging a strange boot issue.
 You can easily tell the VirtualBox provider to boot with a GUI:
 
-```
+```ruby
 config.vm.provider "virtualbox" do |v|
   v.gui = true
 end
@@ -38,6 +38,19 @@ By setting another name, your VM can be more easily identified.
 ```ruby
 config.vm.provider "virtualbox" do |v|
   v.name = "my_vm"
+end
+```
+
+## Default NIC Type
+
+By default Vagrant will not set the NIC type for network interfaces. This
+allows VirtualBox to apply the default NIC type for the guest. If you would
+like to use a specific NIC type by default for guests, set the `default_nic_type`
+option:
+
+```ruby
+config.vm.provider "virtualbox" do |v|
+  v.default_nic_type = "82543GC"
 end
 ```
 

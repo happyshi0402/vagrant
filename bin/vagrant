@@ -5,11 +5,16 @@
 # initializing which have historically resulted in stack traces.
 Signal.trap("INT") { abort }
 
+# Disable exception reporting by default if available
+if Thread.respond_to?(:report_on_exception=)
+  Thread.report_on_exception = false
+end
+
 # Split arguments by "--" if its there, we'll recombine them later
 argv = ARGV.dup
 argv_extra = []
 
-# These will be the options that are passed to initialze the Vagrant
+# These will be the options that are passed to initialize the Vagrant
 # environment.
 opts = {}
 
@@ -32,13 +37,21 @@ argv.each_index do |i|
   arg = argv[i]
 
   if !arg.start_with?("-")
-    if ["plugin", "help"].include?(arg) || (arg == "box" && argv[i+1] == "list")
+    if arg == "box" && argv[i+1] == "list"
       opts[:vagrantfile_name] = ""
       ENV['VAGRANT_NO_PLUGINS'] = "1"
     end
 
-    if arg == "plugin" && argv[i+1] != "list"
-      ENV['VAGRANT_DISABLE_PLUGIN_INIT'] = "1"
+    # Do not load plugins when performing plugin operations
+    if arg == "plugin"
+      if argv.none?{|a| a == "--local" } && !ENV["VAGRANT_LOCAL_PLUGINS_LOAD"]
+        opts[:vagrantfile_name] = ""
+      end
+      ENV['VAGRANT_NO_PLUGINS'] = "1"
+      # Only initialize plugins when listing installed plugins
+      if argv[i+1] != "list"
+        ENV['VAGRANT_DISABLE_PLUGIN_INIT'] = "1"
+      end
     end
 
     break
@@ -52,6 +65,19 @@ if argv.include?("--debug")
   ENV["VAGRANT_LOG"] = "debug"
 end
 
+# Enable log timestamps if requested
+if argv.include?("--timestamp")
+  argv.delete("--timestamp")
+  ENV["VAGRANT_LOG_TIMESTAMP"] = "1"
+end
+
+# Convenience flag to enable debug with timestamps
+if argv.include?("--debug-timestamp")
+  argv.delete("--debug-timestamp")
+  ENV["VAGRANT_LOG"] = "debug"
+  ENV["VAGRANT_LOG_TIMESTAMP"] = "1"
+end
+
 # Stdout/stderr should not buffer output
 $stdout.sync = true
 $stderr.sync = true
@@ -63,6 +89,7 @@ begin
   require 'vagrant/bundler'
   require 'vagrant/cli'
   require 'vagrant/util/platform'
+  require 'vagrant/util/experimental'
 
   # Schedule the cleanup of things
   at_exit(&Vagrant::Bundler.instance.method(:deinit))
@@ -131,6 +158,23 @@ begin
   if !Vagrant.in_installer? && !Vagrant.very_quiet?
     # If we're not in the installer, warn.
     env.ui.warn(I18n.t("vagrant.general.not_in_installer") + "\n", prefix: false)
+  end
+
+  # Acceptable experimental flag values include:
+  #
+  # Unset  - Disables experimental features
+  # 0      - Disables experimental features
+  # 1      - Enables all features
+  # String - Enables one or more features, separated by commas
+  if Vagrant::Util::Experimental.enabled?
+    experimental = Vagrant::Util::Experimental.features_requested
+    ui = Vagrant::UI::Prefixed.new(env.ui, "vagrant")
+    logger.debug("Experimental flag is enabled")
+    if Vagrant::Util::Experimental.global_enabled?
+      ui.warn(I18n.t("vagrant.general.experimental.all"), bold: true, prefix: true, channel: :error)
+    else
+      ui.warn(I18n.t("vagrant.general.experimental.features", features: experimental.join(", ")), bold: true, prefix: true, channel: :error)
+    end
   end
 
   begin

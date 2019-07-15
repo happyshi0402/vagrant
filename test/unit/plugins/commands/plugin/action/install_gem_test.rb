@@ -11,14 +11,14 @@ describe VagrantPlugins::CommandPlugin::Action::InstallGem do
   subject { described_class.new(app, env) }
 
   before do
-    Vagrant::Plugin::Manager.stub(instance: manager)
+    allow(Vagrant::Plugin::Manager).to receive(:instance).and_return(manager)
   end
 
   describe "#call" do
     it "should install the plugin" do
       spec = Gem::Specification.new
       expect(manager).to receive(:install_plugin).with(
-        "foo", version: nil, require: nil, sources: nil, verbose: false).once.and_return(spec)
+        "foo", version: nil, require: nil, sources: nil, verbose: false, env_local: nil).once.and_return(spec)
 
       expect(app).to receive(:call).with(env).once
 
@@ -29,7 +29,7 @@ describe VagrantPlugins::CommandPlugin::Action::InstallGem do
     it "should specify the version if given" do
       spec = Gem::Specification.new
       expect(manager).to receive(:install_plugin).with(
-        "foo", version: "bar", require: nil, sources: nil, verbose: false).once.and_return(spec)
+        "foo", version: "bar", require: nil, sources: nil, verbose: false, env_local: nil).once.and_return(spec)
 
       expect(app).to receive(:call).with(env).once
 
@@ -41,7 +41,7 @@ describe VagrantPlugins::CommandPlugin::Action::InstallGem do
     it "should specify the entrypoint if given" do
       spec = Gem::Specification.new
       expect(manager).to receive(:install_plugin).with(
-        "foo", version: "bar", require: "baz", sources: nil, verbose: false).once.and_return(spec)
+        "foo", version: "bar", require: "baz", sources: nil, verbose: false, env_local: nil).once.and_return(spec)
 
       expect(app).to receive(:call).with(env).once
 
@@ -54,7 +54,7 @@ describe VagrantPlugins::CommandPlugin::Action::InstallGem do
     it "should specify the sources if given" do
       spec = Gem::Specification.new
       expect(manager).to receive(:install_plugin).with(
-        "foo", version: nil, require: nil, sources: ["foo"], verbose: false).once.and_return(spec)
+        "foo", version: nil, require: nil, sources: ["foo"], verbose: false, env_local: nil).once.and_return(spec)
 
       expect(app).to receive(:call).with(env).once
 
@@ -75,7 +75,7 @@ describe VagrantPlugins::CommandPlugin::Action::InstallGem do
       before do
         spec = Gem::Specification.new
         spec.name = "foo"
-        manager.stub(install_plugin: spec)
+        allow(manager).to receive(:install_plugin).and_return(spec)
 
         env[:plugin_name] = "foo"
         subject.call(env)
@@ -84,7 +84,7 @@ describe VagrantPlugins::CommandPlugin::Action::InstallGem do
       end
 
       it "should uninstall the plugin" do
-        expect(action_runner).to receive(:run).with { |action, newenv|
+        expect(action_runner).to receive(:run).with(any_args) { |action, newenv|
           expect(newenv[:plugin_name]).to eql("foo")
         }
 

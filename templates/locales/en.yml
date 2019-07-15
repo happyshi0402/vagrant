@@ -1,5 +1,10 @@
 en:
   vagrant:
+    alert: |-
+      [%{date}]:
+        %{message}
+
+        - %{url}
     boot_completed: |-
       Machine booted and ready!
     boot_waiting: |-
@@ -35,10 +40,13 @@ en:
       URL: %{url}
     box_loading_metadata: |-
       Loading metadata for box '%{name}'
+    box_malformed_continue_on_update: |-
+      Could not determine box updates because box metadata was malformed.
+      Vagrant will continue on...
     box_outdated: |-
-      * '%{name}' is outdated! Current: %{current}. Latest: %{latest}
+      * '%{name}' for '%{provider}' is outdated! Current: %{current}. Latest: %{latest}
     box_outdated_checking_with_refresh: |-
-      Checking if box '%{name}' is up to date...
+      Checking if box '%{name}' version '%{version}' is up to date...
     box_outdated_local: |-
       A newer version of the box '%{name}' is available and already
       installed, but your Vagrant machine is running against
@@ -58,22 +66,24 @@ en:
       Error loading box metadata while attempting to check for
       updates: %{message}
     box_outdated_single: |-
-      A newer version of the box '%{name}' is available! You currently
-      have version '%{current}'. The latest is version '%{latest}'. Run
-      `vagrant box update` to update.
+      A newer version of the box '%{name}' for provider '%{provider}' is
+      available! You currently have version '%{current}'. The latest is version
+      '%{latest}'. Run `vagrant box update` to update.
     box_outdated_metadata_error: |-
-      * '%{name}': Error loading metadata: %{message}
+      * '%{name}' for '%{provider}': Error loading metadata: %{message}
     box_outdated_no_metadata: |-
-      * '%{name}' wasn't added from a catalog, no version information
+      * '%{name}' for '%{provider}' wasn't added from a catalog, no version information
     box_updating: |-
       Updating '%{name}' with provider '%{provider}' from version
       '%{old}' to '%{new}'...
     box_update_checking: |-
       Checking for updates to '%{name}'
     box_up_to_date: |-
-      * '%{name}' (v%{version}) is up to date
+      * '%{name}' for '%{provider}' (v%{version}) is up to date
     box_up_to_date_single: |-
       Box '%{name}' (v%{version}) is running the latest version.
+    box_version_malformed:
+      Invalid version '%{version}' for '%{box_name}', ignoring...
     cfengine_bootstrapping: |-
       Bootstrapping CFEngine with policy server: %{policy_server}...
     cfengine_bootstrapping_policy_hub: |-
@@ -167,16 +177,17 @@ en:
       %{list}
     moved_cwd: |-
       This machine used to live in %{old_wd} but it's now at %{current_wd}.
-      Please change the name of the machine if you want to run it as a different
-      machine.
+      Depending on your current provider you may need to change the name of
+      the machine to run it as a different machine.
     guest_deb_installing_smb: |-
       Installing SMB "mount.cifs"...
     global_status_footer: |-
       The above shows information about all known Vagrant environments
       on this machine. This data is cached and may not be completely
-      up-to-date. To interact with any of the machines, you can go to
-      that directory and run Vagrant, or you can use the ID directly
-      with Vagrant commands from any directory. For example:
+      up-to-date (use "vagrant global-status --prune" to prune invalid
+      entries). To interact with any of the machines, you can go to that
+      directory and run Vagrant, or you can use the ID directly with
+      Vagrant commands from any directory. For example:
       "vagrant destroy 1a2b3c4d"
     global_status_none: |-
       There are no active Vagrant environments on this computer! Or,
@@ -218,10 +229,18 @@ en:
       have specified `rsync_auto` to be false.
     rsync_auto_path: |-
       Watching: %{path}
+    rsync_auto_remove_folder: |-
+      Not syncing %{folder} as it is not part of the current working directory.
     rsync_auto_rsync_error: |-
       There was an error while executing rsync. The error is shown below.
       This may not be critical since rsync sometimes fails, but if this message
       repeats, then please fix the issue:
+
+      %{message}
+    rsync_auto_post_command_error: |-
+      There was an error while executing the rsync post command. This error is
+      shown below. This may not be critical but if this message repeats please
+      fix the issue:
 
       %{message}
     rsync_communicator_not_ready: |-
@@ -272,6 +291,29 @@ en:
       up some disk space.
 
       Press the Enter or Return key to continue.
+
+    trigger:
+      on_error_continue: |-
+        Trigger configured to continue on error...
+      abort: |-
+        Vagrant has been configured to abort. Terminating now...
+      abort_threaded: |-
+        Vagrant has been configured to abort. Vagrant will terminate
+        after remaining running actions have completed...
+      start: |-
+        Running %{type} triggers %{stage} %{action} ...
+      fire_with_name: |-
+        Running trigger: %{name}...
+      fire: |-
+        Running trigger...
+      run:
+        inline: |-
+          Running local: Inline script
+          %{command}
+        script: |-
+          Running local script: %{path}
+
+
     version_current: |-
       Installed Version: %{version}
     version_latest: |-
@@ -281,6 +323,10 @@ en:
     version_no_checkpoint: |-
       Vagrant was unable to check for the latest version of Vagrant.
       Please check manually at https://www.vagrantup.com
+    version_upgrade_available: |-
+      A new version of Vagrant is available: %{latest_version} (installed version: %{installed_version})!
+      To upgrade visit: https://www.vagrantup.com/downloads.html
+
     version_upgrade_howto: |-
       To upgrade to the latest version, visit the downloads page and
       download and install the latest version of Vagrant from the URL
@@ -291,7 +337,7 @@ en:
       If you're curious what changed in the latest release, view the
       CHANGELOG below:
 
-        https://github.com/mitchellh/vagrant/blob/v%{version}/CHANGELOG.md
+        https://github.com/hashicorp/vagrant/blob/v%{version}/CHANGELOG.md
 
     cfengine_config:
       classes_array: |-
@@ -318,7 +364,22 @@ en:
         invalid_event: |-
           %{event} is not a valid event for customization. Valid events
           are: %{valid_events}
+      warning:
+        shared_folder_symlink_create: |-
+          Vagrant is currently configured to create VirtualBox synced folders with
+          the `SharedFoldersEnableSymlinksCreate` option enabled. If the Vagrant
+          guest is not trusted, you may want to disable this option. For more
+          information on this option, please refer to the VirtualBox manual:
 
+            https://www.virtualbox.org/manual/ch04.html#sharedfolders
+
+          This option can be disabled globally with an environment variable:
+
+            VAGRANT_DISABLE_VBOXSYMLINKCREATE=1
+
+          or on a per folder basis within the Vagrantfile:
+
+            config.vm.synced_folder '/host/path', '/guest/path', SharedFoldersEnableSymlinksCreate: false
     general:
       batch_notify_error: |-
         An error occurred. The error will be shown after all tasks complete.
@@ -343,6 +404,18 @@ en:
         shown below.
 
         %{output}
+      experimental:
+        all: |-
+          You have enabled the experimental flag with all features enabled.
+          Please use with caution, as some of the features may not be fully
+          functional yet.
+        features: |-
+          You have requested to enabled the experimental flag with the following features:
+
+          Features:  %{features}
+
+          Please use with caution, as some of the features may not be fully
+          functional yet.
       not_in_installer: |-
         You appear to be running Vagrant outside of the official installers.
         Note that the installers are what ensure that Vagrant has all required
@@ -362,6 +435,26 @@ en:
 
         Backup: %{backup_path}
 
+    plugins:
+      local:
+        uninstalled_plugins: |-
+          Vagrant has detected project local plugins configured for this
+          project which are not installed.
+
+            %{plugins}
+        request_plugin_install: |-
+          Install local plugins (Y/N)
+        install_rerun_command: |-
+          Vagrant has completed installing local plugins for the current Vagrant
+          project directory. Please run the requested command again.
+
+        install_all: |-
+          Vagrant will now install the following plugins to the local project
+          which have been defined in current Vagrantfile:
+
+            %{plugins}
+
+          Press ctrl-c to cancel...
 #-------------------------------------------------------------------------------
 # Translations for exception classes
 #-------------------------------------------------------------------------------
@@ -376,6 +469,12 @@ en:
         Machine name: %{name}
         Active provider: %{active_provider}
         Requested provider: %{requested_provider}
+      alias_invalid_error: |-
+        The defined alias is not valid. Please review the information below
+        to help resolve the issue:
+
+        Alias: %{alias}
+        Message: %{message}
       batch_multi_error: |-
         An error occurred while executing multiple actions in parallel.
         Any errors that occurred are shown below.
@@ -387,7 +486,7 @@ en:
         provider. Double-check your requested provider to verify you didn't
         simply misspell it.
 
-        If you're adding a box from HashiCorp's Atlas, make sure the box is
+        If you're adding a box from HashiCorp's Vagrant Cloud, make sure the box is
         released.
 
         Name: %{name}
@@ -406,7 +505,7 @@ en:
       box_add_short_not_found: |-
         The box '%{name}' could not be found or
         could not be accessed in the remote catalog. If this is a private
-        box on HashiCorp's Atlas, please verify you're logged in via
+        box on HashiCorp's Vagrant Cloud, please verify you're logged in via
         `vagrant login`. Also, please double-check the name. The expanded
         URL and error message are shown below:
 
@@ -492,6 +591,11 @@ en:
         a new box. This box, in turn, specified a different box. This isn't
         allowed, as it could lead to infinite recursion of Vagrant configuration
         loading. Please fix this.
+      box_file_not_exist: |-
+        The file you are attempting to upload does not exist. Please recheck
+        that the file exists and was passed in correctly.
+
+        File: %{file}
       box_metadata_corrupted: |-
         The metadata associated with the box '%{name}' appears corrupted.
         This is most often caused by a disk issue or system crash. Please
@@ -571,12 +675,12 @@ en:
 
         %{versions}
       box_server_not_set: |-
-        A URL to an Atlas server is not set, so boxes cannot be added with a
+        A URL to a Vagrant Cloud server is not set, so boxes cannot be added with a
         shorthand ("mitchellh/precise64") format. You may also be seeing this
         error if you meant to type in a path to a box file which doesn't exist
         locally on your system.
 
-        To set a URL to an Atlas server, set the `VAGRANT_SERVER_URL`
+        To set a URL to a Vagrant Cloud server, set the `VAGRANT_SERVER_URL`
         environmental variable. Or, if you meant to use a file path, make sure
         the path to the file is valid.
       box_update_multi_provider: |-
@@ -602,10 +706,9 @@ en:
         plugins in the `plugins` group in your Gemfile or manually require
         them in a Vagrantfile.
       bundler_error: |-
-        Bundler, the underlying system Vagrant uses to install plugins,
-        reported an error. The error is shown below. These errors are usually
-        caused by misconfigured plugin installations or transient network
-        issues. The error from Bundler is:
+        Vagrant failed to properly resolve required dependencies. These
+        errors can commonly be caused by misconfigured plugin installations
+        or transient network issues. The reported error is:
 
         %{message}
       cant_read_mac_addresses: |-
@@ -674,6 +777,8 @@ en:
       command_deprecated: |-
         The command 'vagrant %{name}' has been deprecated and is no longer functional
         within Vagrant.
+      command_suspend_all_arguments: |-
+        The suspend command with the `--all-global` flag does not take any arguments.
       command_unavailable: |-
         The executable '%{file}' Vagrant is trying to run was not
         found in the PATH variable. This is an error. Please verify
@@ -749,7 +854,7 @@ en:
         checksum!
 
         File source:         %{source}
-        Checsum type:        %{type}
+        Checksum type:       %{type}
         Expected checksum:   %{expected_checksum}
         Calculated checksum: %{actual_checksum}
       env_inval: |-
@@ -820,6 +925,10 @@ en:
         ("%{value}") could not be found. Please verify that the plugin is
         installed which implements this host and that the value you used
         for `config.vagrant.host` is correct.
+      hyperv_virtualbox_error: |-
+        Hyper-V and VirtualBox cannot be used together and will result in a
+        system crash. Vagrant will now exit. Please disable Hyper-V if you wish
+        to use VirtualBox.
       interrupted: |-
         Vagrant exited after cleanup due to external interrupt.
       local_data_dir_not_accessible: |-
@@ -889,11 +998,19 @@ en:
         %{message}
       network_type_not_supported: |-
         The %{type} network type is not supported for this box or guest.
+      network_address_invalid: |-
+        Network settings specified in your Vagrantfile define an invalid
+        IP address. Please review the error message below and update your
+        Vagrantfile network settings:
+
+          Address: %{address}
+          Netmask: %{mask}
+          Error: %{error}
       network_manager_not_installed: |-
         Vagrant was instructed to configure the %{device} network device to
         be managed by NetworkManager. However, the configured guest VM does
         not have NetworkManager installed. To fix this error please remove
-        the `nm_controlled` setting from local Vagantfile. If NetworkManager
+        the `nm_controlled` setting from local Vagrantfile. If NetworkManager
         is required to manage the network devices, please use a box with
         NetworkManager installed.
       nfs_bad_exports: |-
@@ -910,6 +1027,9 @@ en:
         command: %{command}
         stdout: %{stdout}
         stderr: %{stderr}
+      nfs_dupe_permissions: |-
+        You have attempted to export the same nfs host path at %{hostpath} with
+        different nfs permissions. Please pick one permission and reload your guest.
       nfs_cant_read_exports: |-
         Vagrant can't read your current NFS exports! The exports file should be
         readable by any user. This is usually caused by invalid permissions
@@ -1012,6 +1132,11 @@ en:
 
           vagrant plugin expunge --reinstall
 
+        Or you may want to try updating the installed plugins to their latest
+        versions:
+
+          vagrant plugin update
+
         Error message given during initialization: %{message}
       plugin_load_error: |-
         The plugins failed to load properly. The error message given is
@@ -1019,7 +1144,7 @@ en:
 
         %{message}
       plugin_not_installed: |-
-        The plugin '%{name}' is not installed. Please install it first.
+        The plugin '%{name}' is not currently installed.
       plugin_state_file_not_parsable: |-
         Failed to parse the state file "%{path}":
         %{message}
@@ -1044,6 +1169,31 @@ en:
           %{error_msg}
 
         Source: %{source}
+      plugin_no_local_error: |-
+        Vagrant is not currently working within a Vagrant project directory. Local
+        plugins are only supported within a Vagrant project directory.
+      plugin_missing_local_error: |-
+        Vagrant is missing plugins required by the currently loaded Vagrantfile.
+        Please install the configured plugins and run this command again. The
+        following plugins are currently missing:
+
+          %{plugins}
+
+        To install the plugins configured in the current Vagrantfile run the
+        following command:
+
+          vagrant plugin install --local
+      powershell_not_found: |-
+        Failed to locate the powershell executable on the available PATH. Please
+        ensure powershell is installed and available on the local PATH, then
+        run the command again.
+      powershell_invalid_version: |-
+        The version of powershell currently installed on this host is less than
+        the required minimum version. Please upgrade the installed version of
+        powershell to the minimum required version and run the command again.
+
+          Installed version: %{installed_version}
+          Minimum required version: %{minimum_version}
       pushes_not_defined: |-
         The Vagrantfile does not define any 'push' strategies. In order to use
         `vagrant push`, you must define at least one push strategy:
@@ -1094,6 +1244,15 @@ en:
       provider_not_found: |-
         The provider '%{provider}' could not be found, but was requested to
         back the machine '%{machine}'. Please use a provider that exists.
+
+        Vagrant knows about the following providers: %{providers}
+      provider_not_found_suggestion: |-
+        The provider '%{provider}' could not be found, but was requested to
+        back the machine '%{machine}'. Please use a provider that exists.
+
+        Did you mean '%{suggestion}'?
+
+        Vagrant knows about the following providers: %{providers}
       provider_not_usable: |-
         The provider '%{provider}' that was requested to back the machine
         '%{machine}' is reporting that it isn't usable on this system. The
@@ -1113,7 +1272,7 @@ en:
         take a look at the Vagrant source code linked below and try
         to contribute back support. Thank you!
 
-        https://github.com/mitchellh/vagrant
+        https://github.com/hashicorp/vagrant
       rsync_error: |-
         There was an error when attempting to rsync a synced folder.
         Please inspect the error message below for more info.
@@ -1122,6 +1281,14 @@ en:
         Guest path: %{guestpath}
         Command: %{command}
         Error: %{stderr}
+      rsync_post_command_error: |-
+        There was an error while attempting to run the post rsync
+        command for a synced folder. Please inspect the error message
+        below for more info.
+
+        Host path: %{hostpath}
+        Guest path: %{guestpath}
+        Error: %{message}
       rsync_guest_install_error: |-
         Installation of rsync into the guest has failed! The stdout
         and stderr are shown below. Please read the error output, resolve
@@ -1332,6 +1499,28 @@ en:
         The synced folder type '%{type}' is reporting as unusable for
         your current setup. Please verify you have all the proper
         prerequisites for using this shared folder type and try again.
+
+      test_key: |-
+        test value
+      triggers_run_fail: |-
+        Trigger run failed
+      triggers_guest_not_running: |-
+        Could not run remote script on %{machine_name} because its state is %{state}
+      triggers_guest_not_exist: |-
+        Could not run remote script on guest because it does not exist.
+      triggers_bad_exit_codes: |-
+        A script exited with an unacceptable exit code %{code}.
+      triggers_no_block_given: |-
+        There was an error parsing the Vagrantfile:
+        No config was given for the trigger(s) %{command}.
+      triggers_no_stage_given: |-
+        The incorrect stage was given to the trigger plugin:
+        Guest: %{guest_name}
+        Action: %{action}
+        Stage: %{stage}
+
+        This is an internal error that should be reported as a bug.
+
       ui_expects_tty: |-
         Vagrant is attempting to interface with the UI in a way that requires
         a TTY. Most actions in Vagrant that require a TTY have configuration
@@ -1342,6 +1531,34 @@ en:
         '%{provider}', but this provider doesn't support this action. This
         is probably a bug in either the provider or the plugin calling this
         action, and should be reported.
+      upload_invalid_compression_type: |-
+        The compression type requested for upload (`%{type}`) is not a
+        supported value. Try uploading again using a valid compression
+        type.
+
+          Supported types: %{valid_types}
+      upload_missing_extract_capability: |-
+        The guest does not provide extraction capability for the requested
+        compression type (`%{type}`). Try a different compression type or
+        upload without compression.
+      upload_missing_temp_capability: |-
+        The guest does not provide temporary path capabilities. Please
+        try the upload again without requesting a temporary path.
+      upload_source_missing: |-
+        The source path provided for upload cannot be found. Please validate
+        the source location for upload an try again.
+
+          Source Path: %{source}
+      uploader_error: |-
+        An error occurred while uploading the file. The error
+        message, if any, is reproduced below. Please fix this error and try
+        again.
+
+        exit code: %{exit_code}
+        %{message}
+      uploader_interrupted: |-
+        The upload was interrupted by an external signal. It did not
+        complete.
       vagrantfile_exists: |-
         `Vagrantfile` already exists in this directory. Remove it before
         running `vagrant init`.
@@ -1353,11 +1570,22 @@ en:
         Path: %{path}
         Line number: %{line}
         Message: %{exception_class}: %{message}
+      vagrantfile_name_error: |-
+        There was an error loading a Vagrantfile. The file being loaded
+        and the error message are shown below. This is usually caused by
+        an invalid or undefined variable.
+
+        Path: %{path}
+        Line number: %{line}
+        Message: %{message}
       vagrantfile_syntax_error: |-
         There is a syntax error in the following Vagrantfile. The syntax error
         message is reproduced below for convenience:
 
         %{file}
+      vagrantfile_template_not_found_error: |-
+        The Vagrantfile template '%{path}' does not exist. Please double check
+        the template path and try again.
       vagrantfile_write_error: |-
         The user that is running Vagrant doesn't have the proper permissions
         to write a Vagrantfile to the specified location. Please ensure that
@@ -1399,16 +1627,6 @@ en:
         log out and log back in for the new environmental variables to take
         effect. If you're on Linux or Mac, verify your PATH contains the folder
         that has VBoxManage in it.
-      vboxmanage_not_found_wsl_error: |-
-        The "VBoxManage.exe" command or one of its dependencies could not
-        be found. Please verify VirtualBox is properly installed. You can verify
-        everything is okay by running "VBoxManage.exe --version" and verifying
-        that the VirtualBox version is outputted.
-
-        If you just installed VirtualBox, you have to log out and log back in for
-        the new environmental variables to take effect. Using the VirtualBox
-        provider within the WSL requires VirtualBox executables to be available
-        on the system PATH.
       virtualbox_broken_version_040214: |-
         Vagrant detected you have VirtualBox 4.2.14 installed. VirtualBox
         4.2.14 contains a critical bug which prevents it from working with
@@ -1537,7 +1755,9 @@ en:
       vm_not_running: |-
         VM must be running to open SSH connection. Run `vagrant up`
         to start the virtual machine.
-      test_key: "test value"
+      winrm_invalid_communicator: |-
+        The winrm command requires a WinRM communicator to be used when connecting
+        to the guest. Please update your configuration and try the command again.
       wsl_vagrant_version_mismatch: |-
         Vagrant cannot currently enable access to manage machines within the Windows
         environment because the version of Vagrant installed on Windows does not
@@ -1560,10 +1780,14 @@ en:
         Vagrant is unable to use the VirtualBox provider from the Windows Subsystem for
         Linux without access to the Windows environment. Enabling this access must be
         done with caution and an understanding of the implications. For more information
-        on enabing Windows access and using VirtualBox from the Windows Subsystem for
+        on enabling Windows access and using VirtualBox from the Windows Subsystem for
         Linux, please refer to the Vagrant documentation:
 
           https://www.vagrantup.com/docs/other/wsl.html
+      wsl_rootfs_not_found_error: |-
+        Vagrant is unable to determine the location of this instance of the Windows
+        Subsystem for Linux. If this error persists it may be resolved by destroying
+        this subsystem and installing it again.
 #-------------------------------------------------------------------------------
 # Translations for config validation errors
 #-------------------------------------------------------------------------------
@@ -1577,6 +1801,8 @@ en:
           Missing required value for `chef.nodes_path'.
         environment_path_missing: |-
           Environment path not found: %{path}
+        nodes_path_missing: |-
+          Path specified for `nodes_path` does not exist: %{path}
         environment_path_required: |-
           When 'environment' is specified, you must provide 'environments_path'.
         cookbooks_path_missing: |-
@@ -1590,10 +1816,64 @@ en:
           Unknown configuration section '%{key}'. If this section was part of
           a Vagrant 1.0.x plugin, note that 1.0.x plugins are incompatible with 1.1+.
       root:
+        sensitive_bad_type: |-
+          Invalid type provided for `sensitive`. The sensitive option expects a string
+          or an array of strings.
+        plugins_invalid_format: |-
+          Invalid type provided for `plugins`.
+        plugins_bad_key: |-
+          Invalid plugin configuration detected for `%{plugin_name}` plugin.
+
+            Unknown keys: %{plugin_key}
         bad_key: |-
           Unknown configuration section '%{key}'.
       ssh:
         private_key_missing: "`private_key_path` file must exist: %{path}"
+        paranoid_deprecated: |-
+          The key `paranoid` is deprecated. Please use `verify_host_key`. Supported
+          values are exactly the same, only the name of the option has changed.
+        ssh_config_missing: "`config` file must exist: %{path}"
+      triggers:
+        bad_trigger_type: |-
+          The type '%{type}' defined for trigger '%{trigger}' is not valid. Must be one of the following types: '%{types}'
+        bad_command_warning: |-
+          The command '%{cmd}' was not found for this trigger.
+        name_bad_type: |-
+          Invalid type set for `name` on trigger for command '%{cmd}'. `name` should be a String.
+        info_bad_type: |-
+          Invalid type set for `info` on trigger for command '%{cmd}'. `info` should be a String.
+        warn_bad_type: |-
+          Invalid type set for `warn` on trigger for command '%{cmd}'. `warn` should be a String.
+        on_error_bad_type: |-
+          Invalid type set for `on_error` on trigger for command '%{cmd}'. `on_error` can
+          only be `:halt` (default) or `:continue`.
+        abort_bad_type: |-
+          Trigger option `abort` for command '%{cmd}' must be either set to
+          `true` (defaults to exit code 1) or an integer to use as an exit code.
+        abort_false_type: |-
+          `false` is not a valid option for the `abort` option for a trigger. This
+          will be ignored...
+        exit_codes_bad_type: |-
+          Invalid type set for `exit_codes` on trigger for command '%{cmd}'. `exit_codes` can
+          only be a single integer or an array of integers.
+        only_on_bad_type: |-
+          Invalid type found for `only_on`. All values must be a `String` or `Regexp`.
+        ruby_bad_type: |-
+          Invalid type for `ruby` option on trigger for command '%{cmd}'. Only `proc`
+          types are allowed.
+        privileged_ignored: |-
+          The `privileged` setting for option `run` for trigger command '%{command}' will be ignored and set to false.
+        powershell_args_ignored: |-
+          The setting `powershell_args` is not supported for the trigger option `run` and will be ignored.
+        run:
+          bad_type: |-
+            Invalid type set for `run` on trigger for command '%{cmd}'. `run`
+            must be a Hash.
+        run_remote:
+          bad_type: |-
+            Invalid type set for `run` on trigger for command '%{cmd}'. `run`
+            must be a Hash.
+
       vm:
         bad_version: |-
           Invalid box version constraints: %{version}
@@ -1610,6 +1890,8 @@ en:
         hostname_invalid_characters: |-
           The hostname set for the VM should only contain letters, numbers,
           hyphens or dots. It cannot start with a hyphen or dot.
+        ignore_provider_config: |-
+          Ignoring provider config for validation...
         name_invalid: |-
           The sub-VM name '%{name}' is invalid. Please don't use special characters.
         network_ip_ends_in_one: |-
@@ -1643,6 +1925,20 @@ en:
         shared_folder_mount_options_array: |-
           Shared folder mount options specified by 'mount_options' must
           be an array of options.
+        shared_folder_requires_guestpath_or_name: |-
+          Shared folder options must include a guestpath and/or name.
+        shared_folder_wsl_not_drvfs: |-
+          The host path of the shared folder is not supported from WSL. Host
+          path of the shared folder must be located on a file system with
+          DrvFs type. Host path: %{path}
+
+#-------------------------------------------------------------------------------
+# Translations for guests
+#-------------------------------------------------------------------------------
+    guests:
+      capabilities:
+        rebooting: |-
+          Waiting for machine to reboot...
 
 #-------------------------------------------------------------------------------
 # Translations for commands. e.g. `vagrant x`
@@ -1674,6 +1970,9 @@ en:
         will_not_destroy: |-
           The VM '%{name}' will not be destroyed, since the confirmation
           was declined.
+        warning: |-
+          Destroying guests with `--parallel` automatically enables `--force`.
+          Press ctrl-c to cancel.
       init:
         success: |-
           A `Vagrantfile` has been placed in this directory. You are now
@@ -1726,9 +2025,13 @@ en:
 
           %{message}
         repairing: |-
-          Repairing currently installed plugins. This may take a few minutes...
+          Repairing currently installed global plugins. This may take a few minutes...
+        repairing_local: |-
+          Repairing currently installed local project plugins. This may take a few minutes...
         repair_complete: |-
           Installed plugins successfully repaired!
+        repair_local_complete: |-
+          Local project plugins successfully repaired!
         repair_failed: |-
           Failed to automatically repair installed Vagrant plugins. To fix this
           problem remove all user installed plugins and reinstall. Vagrant can
@@ -1758,7 +2061,7 @@ en:
           have to destroy and restart the virtual machine.
         gurumeditation: |-
           The VM is in the "guru meditation" state. This is a rare case which means
-          that an internal error in VitualBox caused the VM to fail. This is always
+          that an internal error in VirtualBox caused the VM to fail. This is always
           the sign of a bug in VirtualBox. You can try to bring your VM back online
           with a `vagrant up`.
         inaccessible: |-
@@ -1809,6 +2112,18 @@ en:
       up:
         upping: |-
           Bringing machine '%{name}' up with '%{provider}' provider...
+      upload:
+        compress: |-
+          Compressing %{source} to %{type} for upload...
+        complete: |-
+          Upload has completed successfully!
+
+            Source: %{source}
+            Destination: %{destination}
+        decompress: |-
+          Decompressing %{type} upload to %{destination}...
+        start: |-
+          Uploading %{source} to %{destination}
       validate:
         success: |-
           Vagrantfile validated successfully.
@@ -1835,6 +2150,8 @@ en:
           choice_help: |-
             When choosing an interface, it is usually the one that is
             being used to connect to the internet.
+          select_interface: |-
+            Which interface should the network bridge to?
           specific_not_found: |-
             Specific bridge '%{bridge}' not found. You may be asked to specify
             which network to bridge to.
@@ -1964,6 +2281,7 @@ en:
             manually for more verbose error output.
         match_mac:
           matching: Matching MAC address for NAT networking...
+          generating: Generating MAC address for NAT networking...
           no_base_mac: |-
             No base MAC address was specified. This is required for the NAT networking
             to work properly (and hence port forwarding, SSH, etc.). Specifying this
@@ -1990,6 +2308,9 @@ en:
             This will cause your specified IP to be inaccessible. Please change
             the IP or name of your host only network so that it no longer matches that of
             a bridged or non-hostonly network.
+
+            Bridged Network Address: '%{netaddr}'
+            Host-only Network '%{interface_name}': '%{that_netaddr}'
           creating: "Creating new host only network for environment..."
           enabling: "Enabling host only network..."
           not_found: |-
@@ -2022,6 +2343,8 @@ en:
           disabled_by_sentinel: |-
             Machine already provisioned. Run `vagrant provision` or use the `--provision`
             flag to force provisioning. Provisioners marked to run always will still run.
+          file:
+            locations: "%{src} => %{dst}"
         resume:
           resuming: Resuming suspended VM...
           unpausing: |-
@@ -2031,6 +2354,17 @@ en:
           mounting: Mounting shared folders...
           mounting_entry: "%{guestpath} => %{hostpath}"
           nomount_entry: "Automounting disabled: %{hostpath}"
+        set_default_nic_type:
+          e1000_warning: |-
+            Vagrant has detected a configuration issue which exposes a
+            vulnerability with the installed version of VirtualBox. The
+            current guest is configured to use an E1000 NIC type for a
+            network adapter which is vulnerable in this version of VirtualBox.
+            Ensure the guest is trusted to use this configuration or update
+            the NIC type using one of the methods below:
+
+              https://www.vagrantup.com/docs/virtualbox/configuration.html#default-nic-type
+              https://www.vagrantup.com/docs/virtualbox/networking.html#virtualbox-nic-type
         set_name:
           setting_name: |-
             Setting the name of the VM: %{name}
@@ -2091,6 +2425,7 @@ en:
         package:
           packaging: "Packaging additional file: %{file}"
           compressing: "Compressing package to: %{fullpath}"
+          box_folder: "Creating new folder: %{folder_path}"
           output_exists: |-
             The specified file '%{filename}' to save the package as already exists. Please
             remove this file or specify a different file name for outputting.
@@ -2156,8 +2491,16 @@ en:
           The chef binary (either `chef-solo` or `chef-client`) was not found on
           the VM and is required for chef provisioning. Please verify that chef
           is installed and that the binary is available on the PATH.
-        cookbook_folder_not_found_warning:
+        cookbooks_folder_not_found_warning:
           "The cookbook path '%{path}' doesn't exist. Ignoring..."
+        nodes_folder_not_found_warning:
+          "The node path '%{path}' doesn't exist. Ignoring..."
+        data_bags_folder_not_found_warning:
+          "The databag path '%{path}' doesn't exist. Ignoring..."
+        roles_folder_not_found_warning:
+          "The role path '%{path}' doesn't exist. Ignoring..."
+        environments_folder_not_found_warning:
+          "The environment path '%{path}' doesn't exist. Ignoring..."
         json: "Generating chef JSON and uploading..."
         client_key_folder: "Creating folder to hold client key..."
         generating_node_name: |-
@@ -2305,19 +2648,24 @@ en:
           take a look at the Vagrant source code linked below and try
           to contribute back support. Thank you!
 
-          https://github.com/mitchellh/vagrant
+          https://github.com/hashicorp/vagrant
         errors:
           ansible_command_failed: |-
             Ansible failed to complete successfully. Any error output should be
             visible above. Please fix these errors and try again.
+          ansible_compatibility_mode_conflict: |-
+            The requested Ansible compatibility mode (%{compatibility_mode}) is in conflict with
+            the Ansible installation on your Vagrant %{system} system (currently: %{ansible_version}).
+            See https://docs.vagrantup.com/v2/provisioning/ansible_common.html#compatibility_mode
+            for more information.
           ansible_not_found_on_guest: |-
             The Ansible software could not be found! Please verify
             that Ansible is correctly installed on your guest system.
 
             If you haven't installed Ansible yet, please install Ansible
             on your Vagrant basebox, or enable the automated setup with the
-            `install` option of this provisioner. Please check
-            https://docs.vagrantup.com/v2/provisioning/ansible_local.html
+            ansible_local provisioner `install` option. Please check
+            https://docs.vagrantup.com/v2/provisioning/ansible_local.html#install
             for more information.
           ansible_not_found_on_host: |-
             The Ansible software could not be found! Please verify
@@ -2327,6 +2675,18 @@ en:
             on your host system. Vagrant can't do this for you in a safe and
             automated way.
             Please check https://docs.ansible.com for more information.
+          ansible_programming_error: |-
+            Ansible Provisioner Programming Error:
+
+            %{message}
+
+            Internal Details:
+
+            %{details}
+
+            Sorry, but this Vagrant error should never occur.
+            Please check https://github.com/hashicorp/vagrant/issues for any
+            existing bug report. If needed, please create a new issue. Thank you!
           cannot_support_pip_install: |-
             Unfortunately Vagrant does not support yet installing Ansible
             from pip for the guest OS running in the machine.
@@ -2335,17 +2695,19 @@ en:
             take a look at the Vagrant source code linked below and try
             to contribute back support. Thank you!
 
-            https://github.com/mitchellh/vagrant
-          ansible_version_not_found_on_guest: |-
-            The requested Ansible version (%{required_version}) was not found on the guest.
-            Please check the ansible installation on your guest system,
-            or adapt the `version` option of this provisioner in your Vagrantfile.
-            See https://docs.vagrantup.com/v2/provisioning/ansible_local.html
+            https://github.com/hashicorp/vagrant
+          ansible_version_mismatch: |-
+            The requested Ansible version (%{required_version}) was not found on the %{system}.
+            Please check the Ansible installation on your Vagrant %{system} system (currently: %{current_version}),
+            or adapt the provisioner `version` option in your Vagrantfile.
+            See https://docs.vagrantup.com/v2/provisioning/ansible_common.html#version
             for more information.
           config_file_not_found: |-
             `%{config_option}` does not exist on the %{system}: %{path}
           extra_vars_invalid: |-
             `extra_vars` must be a hash or a path to an existing file. Received: %{value} (as %{type})
+          no_compatibility_mode: |-
+            `compatibility_mode` must be a valid mode (possible values: %{valid_modes}).
           no_playbook: |-
             `playbook` file path must be set.
           raw_arguments_invalid: |-
@@ -2359,8 +2721,25 @@ en:
         windows_not_supported_for_control_machine: |-
           Windows is not officially supported for the Ansible Control Machine.
           Please check https://docs.ansible.com/intro_installation.html#control-machine-requirements
+        compatibility_mode_not_detected: |-
+          Vagrant gathered an unknown Ansible version:
+
+          %{gathered_version}
+          and falls back on the compatibility mode '%{compatibility_mode}'.
+
+          Alternatively, the compatibility mode can be specified in your Vagrantfile:
+          https://www.vagrantup.com/docs/provisioning/ansible_common.html#compatibility_mode
+        compatibility_mode_warning: |-
+          Vagrant has automatically selected the compatibility mode '%{compatibility_mode}'
+          according to the Ansible version installed (%{ansible_version}).
+
+          Alternatively, the compatibility mode can be specified in your Vagrantfile:
+          https://www.vagrantup.com/docs/provisioning/ansible_common.html#compatibility_mode
 
       docker:
+        wrong_provisioner: |-
+          The Docker post-install provisioner cannot also take a Docker post-install
+          provisioner
         not_running: "Docker is not running on the guest VM."
         install_failed: "Docker installation failed."
 
@@ -2375,6 +2754,12 @@ en:
           You must include both public and private keys.
         must_accept_keys: |-
           You must accept keys when running highstate with master!
+        args_array: |-
+          You must set `args_array` value as an array.
+        python_version: |-
+          You must set `python_version` as an integer or string that represents an integer.
+        version_type_missing: |-
+          You must set the option `install_type` when specifying a `version`.
 
     pushes:
       file:

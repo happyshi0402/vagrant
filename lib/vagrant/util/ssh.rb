@@ -66,7 +66,21 @@ module Vagrant
       def self.exec(ssh_info, opts={})
         # Ensure the platform supports ssh. On Windows there are several programs which
         # include ssh, notably git, mingw and cygwin, but make sure ssh is in the path!
-        ssh_path = Which.which("ssh")
+
+        # First try using the original path provided
+        if ENV["VAGRANT_PREFER_SYSTEM_BIN"] != "0"
+          ssh_path = Which.which("ssh", original_path: true)
+        end
+
+        # If we didn't find an ssh executable, see if we shipped one
+        if !ssh_path
+          ssh_path = Which.which("ssh")
+          if ssh_path && Platform.windows? && (Platform.cygwin? || Platform.msys?)
+            LOGGER.warn("Failed to locate native SSH executable. Using vendored version.")
+            LOGGER.warn("If display issues are encountered, install the ssh package for your environment.")
+          end
+        end
+
         if !ssh_path
           if Platform.windows?
             raise Errors::SSHUnavailableWindows,
@@ -79,9 +93,9 @@ module Vagrant
           raise Errors::SSHUnavailable
         end
 
-        # On Windows, we need to detect whether SSH is actually "plink"
-        # underneath the covers. In this case, we tell the user.
         if Platform.windows?
+          # On Windows, we need to detect whether SSH is actually "plink"
+          # underneath the covers. In this case, we tell the user.
           r = Subprocess.execute(ssh_path)
           if r.stdout.include?("PuTTY Link") || r.stdout.include?("Plink: command-line connection utility")
             raise Errors::SSHIsPuttyLink,
@@ -107,9 +121,15 @@ module Vagrant
         # Command line options
         command_options = [
           "-p", options[:port].to_s,
-          "-o", "Compression=yes",
-          "-o", "DSAAuthentication=yes",
           "-o", "LogLevel=#{log_level}"]
+
+        if ssh_info[:compression]
+          command_options += ["-o", "Compression=yes"]
+        end
+
+        if ssh_info[:dsa_authentication]
+          command_options += ["-o", "DSAAuthentication=yes"]
+        end
 
         # Solaris/OpenSolaris/Illumos uses SunSSH which doesn't support the
         # IdentitiesOnly option. Also, we don't enable it in plain mode or if
@@ -120,7 +140,7 @@ module Vagrant
         end
 
         # no strict hostkey checking unless paranoid
-        if ! ssh_info[:paranoid]
+        if ssh_info[:verify_host_key] == :never || !ssh_info[:verify_host_key]
           command_options += [
             "-o", "StrictHostKeyChecking=no",
             "-o", "UserKnownHostsFile=/dev/null"]
@@ -129,7 +149,25 @@ module Vagrant
         # If we're not in plain mode and :private_key_path is set attach the private key path(s).
         if !plain_mode && options[:private_key_path]
           options[:private_key_path].each do |path|
-            command_options += ["-i", path.to_s]
+
+            private_key_arr = []
+
+            if path.include?('%')
+              if path.include?(' ') && Platform.windows?
+                LOGGER.warn("Paths with spaces and % on windows is not supported and will fail to read the file")
+              end
+              # Use '-o' instead of '-i' because '-i' does not call
+              # percent_expand in misc.c, but '-o' does. when passing the path,
+              # replace '%' in the path with '%%' to escape the '%'
+              path = path.to_s.gsub('%', '%%')
+              private_key_arr = ["-o", "IdentityFile=\"#{path}\""]
+            else
+              # Pass private key file directly with '-i', which properly supports
+              # paths with spaces on Windows guests
+              private_key_arr = ["-i", path]
+            end
+
+            command_options += private_key_arr
           end
         end
 
@@ -138,6 +176,10 @@ module Vagrant
           command_options += [
             "-o", "ForwardX11=yes",
             "-o", "ForwardX11Trusted=yes"]
+        end
+
+        if ssh_info[:config]
+          command_options += ["-F", ssh_info[:config]]
         end
 
         if ssh_info[:proxy_command]
@@ -157,6 +199,12 @@ module Vagrant
         #
         # Without having extra_args be last, the user loses this ability
         command_options += ["-o", "ForwardAgent=yes"] if ssh_info[:forward_agent]
+
+        # Note about :extra_args
+        #   ssh_info[:extra_args] comes from a machines ssh config in a Vagrantfile,
+        #   where as opts[:extra_args] comes from running the ssh command
+        command_options += Array(ssh_info[:extra_args]) if ssh_info[:extra_args]
+
         command_options.concat(opts[:extra_args]) if opts[:extra_args]
 
         # Build up the host string for connecting
@@ -168,7 +216,9 @@ module Vagrant
         # we really don't care since both work.
         ENV["nodosfilewarning"] = "1" if Platform.cygwin?
 
-        ssh = ssh_info[:ssh_command] || 'ssh'
+        # If an ssh command is defined, use that. If an ssh binary was
+        # discovered on the path, use that. Otherwise fail to just trying `ssh`
+        ssh = ssh_info[:ssh_command] || ssh_path || 'ssh'
 
         # Invoke SSH with all our options
         if !opts[:subprocess]

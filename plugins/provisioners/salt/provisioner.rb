@@ -89,7 +89,7 @@ module VagrantPlugins
       end
 
       def need_configure
-        @config.minion_config or @config.minion_key or @config.master_config or @config.master_key or @config.grains_config or @config.version
+        @config.minion_config or @config.minion_key or @config.master_config or @config.master_key or @config.grains_config or @config.version or @config.minion_json_config or @config.master_json_config
       end
 
       def need_install
@@ -110,18 +110,28 @@ module VagrantPlugins
 
       # Generates option string for bootstrap script
       def bootstrap_options(install, configure, config_dir)
-        options = ""
-
         # Any extra options passed to bootstrap
         if @config.bootstrap_options
-          options = "%s %s" % [options, @config.bootstrap_options]
+          options = @config.bootstrap_options
+        else
+          options = ""
+        end
+
+        if @config.master_json_config && @machine.config.vm.communicator != :winrm
+          config = @config.master_json_config
+          options = "%s -J '#{config}'" % [options]
+        end
+
+        if @config.minion_json_config && @machine.config.vm.communicator != :winrm
+          config = @config.minion_json_config
+          options = "%s -j '#{config}'" % [options]
         end
 
         if configure && @machine.config.vm.communicator != :winrm
           options = "%s -F -c %s" % [options, config_dir]
         end
 
-        if @config.seed_master && @config.install_master
+        if @config.seed_master && @config.install_master && @machine.config.vm.communicator != :winrm
           seed_dir = "/tmp/minion-seed-keys"
           @machine.communicate.sudo("mkdir -p -m777 #{seed_dir}")
           @config.seed_master.each do |name, keyfile|
@@ -132,27 +142,27 @@ module VagrantPlugins
           options = "#{options} -k #{seed_dir}"
         end
 
-        if configure && !install
+        if configure && !install && @machine.config.vm.communicator != :winrm
           options = "%s -C" % options
         end
 
-        if @config.install_master
+        if @config.install_master && @machine.config.vm.communicator != :winrm
           options = "%s -M" % options
         end
 
-        if @config.install_syndic
+        if @config.install_syndic && @machine.config.vm.communicator != :winrm
           options = "%s -S" % options
         end
 
-        if @config.no_minion
+        if @config.no_minion && @machine.config.vm.communicator != :winrm
           options = "%s -N" % options
         end
 
-        if @config.install_type
+        if @config.install_type && @machine.config.vm.communicator != :winrm
           options = "%s %s" % [options, @config.install_type]
         end
 
-        if @config.install_args
+        if @config.install_args && @machine.config.vm.communicator != :winrm
           options = "%s %s" % [options, @config.install_args]
         end
 
@@ -166,7 +176,19 @@ module VagrantPlugins
       ## Actions
       # Get pillar string to pass with the salt command
       def get_pillar
-        " pillar='#{@config.pillar_data.to_json}'" if !@config.pillar_data.empty?
+        if !@config.pillar_data.empty?
+          if @machine.config.vm.communicator == :winrm
+            # ' doesn't have any special behavior on the command prompt,
+            # so '{"x":"y"}' becomes '{x:y}' with literal single quotes.
+            # However, """ will become " , and \\""" will become \" .
+            # Use \\"" instead of \\""" for literal inner-value quotes
+            # to avoid issue with odd number of quotes.
+            # --% disables special PowerShell parsing on the rest of the line.
+            " --% pillar=#{@config.pillar_data.to_json.gsub(/(?<!\\)\"/, '"""').gsub(/\\\"/, %q(\\\\\""))}"
+          else
+            " pillar='#{@config.pillar_data.to_json}'"
+          end
+        end
       end
 
       # Get colorization option string to pass with the salt command
@@ -182,6 +204,30 @@ module VagrantPlugins
         else
           " --log-level=debug"
         end
+      end
+
+      # Get command-line options for masterless provisioning
+      def get_masterless
+        options = ""
+
+        if @config.masterless
+          options = " --local"
+          if @config.minion_id
+            options += " --id #{@config.minion_id}"
+          end
+        end
+
+        return options
+      end
+
+      # Append additional arguments to the salt command
+      def get_salt_args
+        " " + Array(@config.salt_args).join(" ")
+      end
+
+      # Append additional arguments to the salt-call command
+      def get_call_args
+        " " + Array(@config.salt_call_args).join(" ")
       end
 
       # Copy master and minion configs to VM
@@ -253,6 +299,9 @@ module VagrantPlugins
             if @config.version
               options += " -version %s" % @config.version
             end
+            if @config.python_version
+              options += " -pythonVersion %s" % @config.python_version
+            end
             if @config.run_service
               @machine.env.ui.info "Salt minion will be stopped after installing."
               options += " -runservice %s" % @config.run_service
@@ -267,6 +316,9 @@ module VagrantPlugins
             end
             bootstrap_destination = File.join(config_dir, "bootstrap_salt.ps1")
           else
+            if @config.version
+              options += " %s" % @config.version
+            end
             bootstrap_destination = File.join(config_dir, "bootstrap_salt.sh")
           end
 
@@ -276,7 +328,7 @@ module VagrantPlugins
           @machine.communicate.upload(bootstrap_path.to_s, bootstrap_destination)
           @machine.communicate.sudo("chmod +x %s" % bootstrap_destination)
           if @machine.config.vm.communicator == :winrm
-            bootstrap = @machine.communicate.sudo("powershell.exe -executionpolicy bypass -file %s %s" % [bootstrap_destination, options]) do |type, data|
+            bootstrap = @machine.communicate.sudo("powershell.exe -NonInteractive -NoProfile -executionpolicy bypass -file %s %s" % [bootstrap_destination, options]) do |type, data|
               if data[0] == "\n"
                 # Remove any leading newline but not whitespace. If we wanted to
                 # remove newlines and whitespace we would have used data.lstrip
@@ -317,10 +369,15 @@ module VagrantPlugins
 
       def call_overstate
         if @config.run_overstate
+          # If verbose is on, do not duplicate a failed command's output in the error message.
+          ssh_opts = {}
+          if @config.verbose
+            ssh_opts = { error_key: :ssh_bad_exit_status_muted }
+          end
           if @config.install_master
             @machine.env.ui.info "Calling state.overstate... (this may take a while)"
             @machine.communicate.sudo("salt '*' saltutil.sync_all")
-            @machine.communicate.sudo("salt-run state.over") do |type, data|
+            @machine.communicate.sudo("salt-run state.over", ssh_opts) do |type, data|
               if @config.verbose
                 @machine.env.ui.info(data)
               end
@@ -335,16 +392,19 @@ module VagrantPlugins
 
       def call_highstate
         if @config.run_highstate
-          local=""
-          if @config.masterless
-            local=" --local"
+          # If verbose is on, do not duplicate a failed command's output in the error message.
+          ssh_opts = {}
+          if @config.verbose
+            ssh_opts = { error_key: :ssh_bad_exit_status_muted }
           end
+
           @machine.env.ui.info "Calling state.highstate... (this may take a while)"
           if @config.install_master
-            unless @config.masterless?
+            unless @config.masterless
               @machine.communicate.sudo("salt '*' saltutil.sync_all")
             end
-            @machine.communicate.sudo("salt '*' state.highstate --verbose #{local}#{get_loglevel}#{get_colorize}#{get_pillar}") do |type, data|
+            options = "#{get_masterless}#{get_loglevel}#{get_colorize}#{get_pillar}#{get_salt_args}"
+            @machine.communicate.sudo("salt '*' state.highstate --verbose#{options}", ssh_opts) do |type, data|
             if @config.verbose
                 @machine.env.ui.info(data.rstrip)
             end
@@ -352,19 +412,22 @@ module VagrantPlugins
           else
             if @machine.config.vm.communicator == :winrm
               opts = { elevated: true }
-              unless @config.masterless?
+              unless @config.masterless
                 @machine.communicate.execute("C:\\salt\\salt-call.bat saltutil.sync_all", opts)
               end
-              @machine.communicate.execute("C:\\salt\\salt-call.bat state.highstate --retcode-passthrough #{local}#{get_loglevel}#{get_colorize}#{get_pillar}", opts) do |type, data|
+              # TODO: something equivalent to { error_key: :ssh_bad_exit_status_muted }?
+              options = "#{get_masterless}#{get_loglevel}#{get_colorize}#{get_pillar}#{get_call_args}"
+              @machine.communicate.execute("C:\\salt\\salt-call.bat state.highstate --retcode-passthrough#{options}", opts) do |type, data|
                 if @config.verbose
                   @machine.env.ui.info(data.rstrip)
                 end
               end
             else
-              unless @config.masterless?
+              unless @config.masterless
                 @machine.communicate.sudo("salt-call saltutil.sync_all")
               end
-              @machine.communicate.sudo("salt-call state.highstate --retcode-passthrough #{local}#{get_loglevel}#{get_colorize}#{get_pillar}") do |type, data|
+              options = "#{get_masterless}#{get_loglevel}#{get_colorize}#{get_pillar}#{get_call_args}"
+              @machine.communicate.sudo("salt-call state.highstate --retcode-passthrough#{options}", ssh_opts) do |type, data|
                 if @config.verbose
                   @machine.env.ui.info(data.rstrip)
                 end
@@ -393,14 +456,20 @@ module VagrantPlugins
           end
         end
 
+        # If verbose is on, do not duplicate a failed command's output in the error message.
+        ssh_opts = {}
+        if @config.verbose
+          ssh_opts = { error_key: :ssh_bad_exit_status_muted }
+        end
+
         @machine.env.ui.info "Running the following orchestrations: #{@config.orchestrations}"
         @machine.env.ui.info "Running saltutil.sync_all before orchestrating"
-        @machine.communicate.sudo("salt '*' saltutil.sync_all", &log_output)
+        @machine.communicate.sudo("salt '*' saltutil.sync_all", ssh_opts, &log_output)
 
         @config.orchestrations.each do |orchestration|
           cmd = "salt-run -l info state.orchestrate #{orchestration}"
           @machine.env.ui.info "Calling #{cmd}... (this may take a while)"
-          @machine.communicate.sudo(cmd, &log_output)
+          @machine.communicate.sudo(cmd, ssh_opts, &log_output)
         end
       end
 

@@ -42,7 +42,7 @@ is unable to automatically install rsync for your operating system,
 it will tell you.
 
 The destination folder will be created as the user initiating the connection,
-this is `vagrant` by default. This user requires the appropiate permissions on
+this is `vagrant` by default. This user requires the appropriate permissions on
 the destination folder.
 
 ## Options
@@ -53,7 +53,8 @@ The rsync synced folder type accepts the following options:
   to `rsync`. By default this is `["--verbose", "--archive", "--delete", "-z", "--copy-links"]`.
 
 * `rsync__auto` (boolean) - If false, then `rsync-auto` will not
-  watch and automatically sync this folder. By default, this is true.
+  watch and automatically sync this folder. By default, this is true. __Note__: This
+  option will not automatically invoke the `rsync-auto` subcommand.
 
 * `rsync__chown` (boolean) - If false, then the
   [`owner` and `group`](/docs/synced-folders/basic_usage.html)
@@ -67,6 +68,10 @@ The rsync synced folder type accepts the following options:
   to exclude from the sync. The values can be any acceptable rsync exclude
   pattern. By default, the ".vagrant/" directory is excluded. We recommend
   excluding revision control directories such as ".git/" as well.
+
+* `rsync__rsync_ownership` (boolean) - If true, and rsync executables in use
+  are >= 3.1.0, then rsync will be used to set the owner and group instead
+  of a separate call to modify ownership. By default, this is false.
 
 * `rsync__rsync_path` (string) - The path on the remote host where rsync
   is and how it is executed. This is platform specific but defaults to

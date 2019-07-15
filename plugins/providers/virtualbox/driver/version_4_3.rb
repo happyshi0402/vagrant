@@ -180,11 +180,18 @@ module VagrantPlugins
 
           execute("list", "vms", retryable: true).split("\n").each do |line|
             if line =~ /^".+?"\s+\{(.+?)\}$/
-              info = execute("showvminfo", $1.to_s, "--machinereadable", retryable: true)
-              info.split("\n").each do |inner_line|
-                if inner_line =~ /^hostonlyadapter\d+="(.+?)"$/
-                  networks.delete($1.to_s)
+              begin
+                info = execute("showvminfo", $1.to_s, "--machinereadable", retryable: true)
+                info.split("\n").each do |inner_line|
+                  if inner_line =~ /^hostonlyadapter\d+="(.+?)"$/
+                    networks.delete($1.to_s)
+                  end
                 end
+              rescue Vagrant::Errors::VBoxManageError => e
+                raise if !e.extra_data[:stderr].include?("VBOX_E_OBJECT_NOT_FOUND")
+
+                # VirtualBox could not find the vm. It may have been deleted
+                # by another process after we called 'vboxmanage list vms'? Ignore this error.
               end
             end
           end
@@ -569,8 +576,15 @@ module VagrantPlugins
               # Ignore our own used ports
               next if uuid == @uuid
 
-              read_forwarded_ports(uuid, true).each do |_, _, hostport, _|
-                ports << hostport
+              begin
+                read_forwarded_ports(uuid, true).each do |_, _, hostport, _|
+                  ports << hostport
+                end
+              rescue Vagrant::Errors::VBoxManageError => e
+                raise if !e.extra_data[:stderr].include?("VBOX_E_OBJECT_NOT_FOUND")
+
+                # VirtualBox could not find the vm. It may have been deleted
+                # by another process after we called 'vboxmanage list vms'? Ignore this error.
               end
             end
           end
@@ -609,9 +623,14 @@ module VagrantPlugins
         end
 
         def share_folders(folders)
+          is_solaris = begin
+                         "SunOS" == read_guest_property("/VirtualBox/GuestInfo/OS/Product")
+                       rescue
+                         false
+                       end
           folders.each do |folder|
             hostpath = folder[:hostpath]
-            if Vagrant::Util::Platform.windows?
+            if Vagrant::Util::Platform.windows? && is_solaris
               hostpath = Vagrant::Util::Platform.windows_unc_path(hostpath)
             end
             args = ["--name",
@@ -620,8 +639,10 @@ module VagrantPlugins
               hostpath]
             args << "--transient" if folder.key?(:transient) && folder[:transient]
 
-            # Enable symlinks on the shared folder
-            execute("setextradata", @uuid, "VBoxInternal2/SharedFoldersEnableSymlinksCreate/#{folder[:name]}", "1")
+            if folder[:SharedFoldersEnableSymlinksCreate]
+              # Enable symlinks on the shared folder
+              execute("setextradata", @uuid, "VBoxInternal2/SharedFoldersEnableSymlinksCreate/#{folder[:name]}", "1")
+            end
 
             # Add the shared folder
             execute("sharedfolder", "add", @uuid, *args)

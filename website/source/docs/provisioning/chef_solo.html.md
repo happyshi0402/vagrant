@@ -23,7 +23,7 @@ of a single page of documentation.
 
 <div class="alert alert-warning">
   <strong>Warning:</strong> If you are not familiar with Chef and Vagrant already,
-  I recommend starting with the <a href="/docs/provisioning/shell.html">shell
+  it is recommended to start with the <a href="/docs/provisioning/shell.html">shell
   provisioner</a>. However, if you are comfortable with Vagrant already, Vagrant
   is the best way to learn Chef.
 </div>
@@ -170,7 +170,7 @@ to Chef Solo. This is done by setting the `json` property with a Ruby
 hash (dictionary-like object), which is converted to JSON and passed
 in to Chef:
 
-```
+```ruby
 Vagrant.configure("2") do |config|
   config.vm.provision "chef_solo" do |chef|
     # ...

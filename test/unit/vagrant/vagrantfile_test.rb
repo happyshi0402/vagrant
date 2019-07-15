@@ -208,6 +208,31 @@ describe Vagrant::Vagrantfile do
       expect(box.name).to eq("base")
     end
 
+    it "does not configure box configuration if set to ignore" do
+      register_provider("foo")
+
+      configure do |config|
+        config.vm.box = "base"
+        config.vm.ignore_box_vagrantfile = true
+      end
+
+      iso_env.box3("base", "1.0", :foo, vagrantfile: <<-VF)
+      Vagrant.configure("2") do |config|
+        config.ssh.port = 123
+        config.vm.hostname = "hello"
+      end
+      VF
+
+      results = subject.machine_config(:default, :foo, boxes)
+      box     = results[:box]
+      config  = results[:config]
+      expect(config.vm.box).to eq("base")
+      expect(config.ssh.port).to eq(nil)
+      expect(config.vm.hostname).to eq(nil)
+      expect(box).to_not be_nil
+      expect(box.name).to eq("base")
+    end
+
     it "configures with the proper box version" do
       register_provider("foo")
 
@@ -288,9 +313,11 @@ describe Vagrant::Vagrantfile do
 
       configure do |config|
         config.vm.box = "base"
+        config.vm.box_version = "1.0"
 
         config.vm.provider "foo" do |_, c|
           c.vm.box = "foobox"
+          c.vm.box_version = "2.0"
         end
       end
 
@@ -300,7 +327,7 @@ describe Vagrant::Vagrantfile do
       end
       VF
 
-      iso_env.box3("foobox", "1.0", :foo, vagrantfile: <<-VF)
+      iso_env.box3("foobox", "2.0", :foo, vagrantfile: <<-VF)
       Vagrant.configure("2") do |config|
         config.ssh.port = 234
       end
@@ -311,8 +338,10 @@ describe Vagrant::Vagrantfile do
       box     = results[:box]
       expect(config.vm.box).to eq("foobox")
       expect(config.ssh.port).to eq(234)
+      expect(config.vm.box_version).to eq("2.0")
       expect(box).to_not be_nil
       expect(box.name).to eq("foobox")
+      expect(box.version).to eq("2.0")
     end
 
     it "raises an error if the machine is not found" do
@@ -325,11 +354,102 @@ describe Vagrant::Vagrantfile do
         to raise_error(Vagrant::Errors::ProviderNotFound)
     end
 
+    it "raises an error if the provider is not found but gives suggestion" do
+      register_provider("foo")
+
+      expect { subject.machine_config(:default, :Foo, boxes) }.
+        to raise_error(Vagrant::Errors::ProviderNotFoundSuggestion)
+    end
+
     it "raises an error if the provider is not usable" do
       register_provider("foo", nil, unusable: true)
 
       expect { subject.machine_config(:default, :foo, boxes) }.
         to raise_error(Vagrant::Errors::ProviderNotUsable)
+    end
+
+    context "when provider validation is ignored" do
+      before do
+        configure do |config|
+          config.vm.box = "base"
+          config.vm.box_version = "1.0"
+          config.vm.define :guest1
+          config.vm.define :guest2
+
+          config.vm.provider "custom" do |_, c|
+            c.ssh.port = 123
+          end
+        end
+
+        iso_env.box3("base", "1.0", :custom, vagrantfile: <<-VF)
+        Vagrant.configure("2") do |config|
+          config.vagrant.plugins = "vagrant-custom"
+        end
+        VF
+      end
+
+      it "should not raise an error if provider is not found" do
+        expect { subject.machine_config(:guest1, :custom, boxes, nil, false) }.
+          not_to raise_error
+      end
+
+      it "should return configuration from box Vagrantfile" do
+        config = subject.machine_config(:guest1, :custom, boxes, nil, false)[:config]
+        expect(config.vagrant.plugins).to be_a(Hash)
+        expect(config.vagrant.plugins.keys).to include("vagrant-custom")
+      end
+    end
+
+    context "local box metadata file" do
+      let(:data_path) { double(:data_path) }
+      let(:meta_file) { double(:meta_file) }
+      let(:box_version) { "2.0" }
+
+      before do
+        register_provider("foo")
+        iso_env.box3("base", "1.0", :foo)
+        allow(data_path).to receive(:join).with("box_meta").
+          and_return(meta_file)
+        allow(meta_file).to receive(:file?).and_return(false)
+        configure do |config|
+          config.vm.box = "base"
+          config.vm.box_version = box_version
+        end
+      end
+
+      it "checks for local box metadata file" do
+        expect(meta_file).to receive(:file?).and_return(false)
+        subject.machine_config(:default, :foo, boxes, data_path)
+      end
+
+      context "file exists" do
+        let(:meta_file_content) { '{"name":"base","version":"1.0"}' }
+
+        before do
+          allow(meta_file).to receive(:file?).and_return(true)
+          allow(meta_file).to receive(:read).and_return(meta_file_content)
+        end
+
+        it "reads the local box metadata file" do
+          expect(meta_file).to receive(:read).and_return(meta_file_content)
+          subject.machine_config(:default, :foo, boxes, data_path)
+        end
+
+        it "properly loads the box defined in metadata" do
+          result = subject.machine_config(:default, :foo, boxes, data_path)
+          expect(result[:box]).not_to be_nil
+        end
+
+        context "with invalid box version" do
+          let(:box_version) { "1.0" }
+          let(:meta_file_content) { '{"name":"base","version":"2.0"}' }
+
+          it "loads box base on Vagrantfile information" do
+            result = subject.machine_config(:default, :foo, boxes, data_path)
+            expect(result[:box]).not_to be_nil
+          end
+        end
+      end
     end
   end
 

@@ -20,7 +20,7 @@ module VagrantPlugins
         #
         # @param [Vagrant::Machine] machine Machine instance for this driver
         def initialize(machine)
-          if !Vagrant::Util::Which.which("vagrant-compose")
+          if !Vagrant::Util::Which.which("docker-compose")
             raise Errors::DockerComposeNotInstalledError
           end
           super()
@@ -83,20 +83,39 @@ module VagrantPlugins
           # need to worry about uniqueness with compose
           name    = machine.name.to_s
           image   = params.fetch(:image)
-          links   = params.fetch(:links)
+          links   = Array(params.fetch(:links, [])).map do |link|
+            case link
+            when Array
+              link
+            else
+              link.to_s.split(":")
+            end
+          end
           ports   = Array(params[:ports])
           volumes = Array(params[:volumes]).map do |v|
             v = v.to_s
+            host, guest = v.split(":", 2)
             if v.include?(":") && (Vagrant::Util::Platform.windows? || Vagrant::Util::Platform.wsl?)
-              host, guest = v.split(":", 2)
               host = Vagrant::Util::Platform.windows_path(host)
               # NOTE: Docker does not support UNC style paths (which also
               # means that there's no long path support). Hopefully this
               # will be fixed someday and the gsub below can be removed.
               host.gsub!(/^[^A-Za-z]+/, "")
-              v = [host, guest].join(":")
             end
-            v
+            # if host path is a volume key, don't expand it.
+            # if both exist (a path and a key) show warning and move on
+            # otherwise assume it's a realative path and expand the host path
+            compose_config = get_composition
+            if compose_config["volumes"] && compose_config["volumes"].keys.include?(host)
+              if File.directory?(@machine.env.cwd.join(host).to_s)
+                @machine.env.ui.warn(I18n.t("docker_provider.volume_path_not_expanded",
+                                           host: host))
+              end
+            else
+              @logger.debug("Path expanding #{host} to current Vagrant working dir instead of docker-compose config file directory")
+              host = @machine.env.cwd.join(host).to_s
+            end
+            "#{host}:#{guest}"
           end
           cmd     = Array(params.fetch(:cmd))
           env     = Hash[*params.fetch(:env).flatten.map(&:to_s)]

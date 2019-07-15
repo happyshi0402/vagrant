@@ -62,6 +62,8 @@ module VagrantPlugins
             "4.3" => Version_4_3,
             "5.0" => Version_5_0,
             "5.1" => Version_5_1,
+            "5.2" => Version_5_2,
+            "6.0" => Version_6_0,
           }
 
           if @@version.start_with?("4.2.14")

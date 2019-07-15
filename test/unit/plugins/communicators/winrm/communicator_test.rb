@@ -13,7 +13,7 @@ describe VagrantPlugins::CommunicatorWinRM::Communicator do
   let(:shell) { double("shell") }
   let(:good_output) { WinRM::Output.new.tap { |out| out.exitcode = 0 } }
   let(:bad_output) { WinRM::Output.new.tap { |out| out.exitcode = 1 } }
-  
+
   subject do
     described_class.new(machine).tap do |comm|
       allow(comm).to receive(:create_shell).and_return(shell)
@@ -57,15 +57,27 @@ describe VagrantPlugins::CommunicatorWinRM::Communicator do
     end
   end
 
+  describe ".reset!" do
+    it "should create a new shell" do
+      expect(subject).to receive(:shell).with(true)
+      subject.reset!
+    end
+  end
+
   describe ".ready?" do
     it "returns true if hostname command executes without error" do
       expect(shell).to receive(:cmd).with("hostname").and_return({ exitcode: 0 })
-      expect(subject.ready?).to be_true
+      expect(subject.ready?).to be(true)
     end
 
     it "returns false if hostname command fails with a transient error" do
       expect(shell).to receive(:cmd).with("hostname").and_raise(VagrantPlugins::CommunicatorWinRM::Errors::TransientError)
-      expect(subject.ready?).to be_false
+      expect(subject.ready?).to be(false)
+    end
+
+    it "returns false if hostname command fails with a WinRMNotReady error" do
+      expect(shell).to receive(:cmd).with("hostname").and_raise(VagrantPlugins::CommunicatorWinRM::Errors::WinRMNotReady)
+      expect(subject.ready?).to be(false)
     end
 
     it "raises an error if hostname command fails with an unknown error" do
@@ -112,12 +124,12 @@ describe VagrantPlugins::CommunicatorWinRM::Communicator do
   describe ".test" do
     it "returns true when exit code is zero" do
       expect(shell).to receive(:powershell).with(kind_of(String)).and_return(good_output)
-      expect(subject.test("test -d c:/windows")).to be_true
+      expect(subject.test("test -d c:/windows")).to be(true)
     end
 
     it "returns false when exit code is non-zero" do
       expect(shell).to receive(:powershell).with(kind_of(String)).and_return(bad_output)
-      expect(subject.test("test -d /tmp/foobar")).to be_false
+      expect(subject.test("test -d /tmp/foobar")).to be(false)
     end
 
     it "returns false when stderr contains output" do
@@ -125,11 +137,11 @@ describe VagrantPlugins::CommunicatorWinRM::Communicator do
       output.exitcode = 1
       output << { stderr: 'this is an error' }
       expect(shell).to receive(:powershell).with(kind_of(String)).and_return(output)
-      expect(subject.test("[-x stuff] && foo")).to be_false
+      expect(subject.test("[-x stuff] && foo")).to be(false)
     end
 
     it "returns false when command is testing for linux OS" do
-      expect(subject.test("uname -s | grep Debian")).to be_false
+      expect(subject.test("uname -s | grep Debian")).to be(false)
     end
   end
 

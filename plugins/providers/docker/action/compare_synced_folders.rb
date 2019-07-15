@@ -26,20 +26,24 @@ module VagrantPlugins
           end
 
           # Remove the matching folders, and build up non-matching or
-          # new syncedf olders.
+          # new synced folders.
           invalids = {}
           fresh.each do |_, fs|
             fs.each do |_, data|
               invalid = false
               old     = existing.delete(data[:guestpath])
-              invalid = true if !old
+              if !old
+                invalid = true
+              else
+                old = File.expand_path(old)
+              end
 
               if !invalid && old
-                invalid = true if old != data[:hostpath]
+                invalid = true if old != File.expand_path(data[:hostpath])
               end
 
               if invalid
-                invalids[data[:guestpath]] = data[:hostpath]
+                invalids[File.expand_path(data[:guestpath])] = File.expand_path(data[:hostpath])
               end
             end
           end

@@ -23,8 +23,8 @@ describe VagrantPlugins::CommandSSHConfig::Command do
     port:             1234,
     username:         "testuser",
     keys_only:        true,
-    paranoid:         false,
-    private_key_path: [],
+    verify_host_key:         false,
+    private_key_path: ["/home/vagrant/.private/keys.key"],
     forward_agent:    false,
     forward_x11:      false
   }}
@@ -32,7 +32,7 @@ describe VagrantPlugins::CommandSSHConfig::Command do
   subject { described_class.new(argv, iso_env) }
 
   before do
-    machine.stub(ssh_info: ssh_info)
+    allow(machine).to receive(:ssh_info).and_return(ssh_info)
     allow(subject).to receive(:with_target_vms) { |&block| block.call machine }
   end
 
@@ -53,6 +53,7 @@ Host #{machine.name}
   UserKnownHostsFile /dev/null
   StrictHostKeyChecking no
   PasswordAuthentication no
+  IdentityFile /home/vagrant/.private/keys.key
   IdentitiesOnly yes
   LogLevel FATAL
       SSHCONFIG
@@ -123,8 +124,8 @@ Host #{machine.name}
       expect(output).not_to include('IdentitiesOnly')
     end
 
-    it "omits StrictHostKeyChecking and UserKnownHostsFile when paranoid is true" do
-      allow(machine).to receive(:ssh_info) { ssh_info.merge(paranoid: true) }
+    it "omits StrictHostKeyChecking and UserKnownHostsFile when verify_host_key is true" do
+      allow(machine).to receive(:ssh_info) { ssh_info.merge(verify_host_key: true) }
 
       output = ""
       allow(subject).to receive(:safe_puts) do |data|
@@ -135,6 +136,47 @@ Host #{machine.name}
 
       expect(output).not_to include('StrictHostKeyChecking ')
       expect(output).not_to include('UserKnownHostsFile ')
+    end
+
+    it "formats windows paths if windows" do
+      allow(machine).to receive(:ssh_info) { ssh_info.merge(private_key_path: ["C:\\path\\to\\vagrant\\home.key"]) }
+      allow(Vagrant::Util::Platform).to receive(:format_windows_path).and_return("/home/vagrant/home.key")
+      allow(Vagrant::Util::Platform).to receive(:windows?).and_return(true)
+
+      output = ""
+      allow(subject).to receive(:safe_puts) do |data|
+        output += data if data
+      end
+
+      subject.execute
+      expect(output).to include('IdentityFile /home/vagrant/home.key')
+    end
+
+    it "handles verify_host_key :never value" do
+      allow(machine).to receive(:ssh_info) { ssh_info.merge(verify_host_key: :never) }
+
+      output = ""
+      allow(subject).to receive(:safe_puts) do |data|
+        output += data if data
+      end
+
+      subject.execute
+
+      expect(output).to include('StrictHostKeyChecking ')
+      expect(output).to include('UserKnownHostsFile ')
+    end
+
+    it "includes custom ssh_config path when provided" do
+      allow(machine).to receive(:ssh_info) { ssh_info.merge(config: "/custom/ssh/config") }
+
+      output = ""
+      allow(subject).to receive(:safe_puts) do |data|
+        output += data if data
+      end
+
+      subject.execute
+
+      expect(output).to include("Include /custom/ssh/config")
     end
   end
 end

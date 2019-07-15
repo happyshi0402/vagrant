@@ -105,9 +105,16 @@ module VagrantPlugins
           end
 
           # Make sure the temporary directory is properly set up
+          if windows?
+            tmp_command = "mkdir -p #{config.temp_dir}"
+            comm_opts = { shell: :powershell}
+          else
+            tmp_command = "mkdir -p #{config.temp_dir}; chmod 0777 #{config.temp_dir}"
+            comm_opts = {}
+          end
+
           @machine.communicate.tap do |comm|
-            comm.sudo("mkdir -p #{config.temp_dir}")
-            comm.sudo("chmod 0777 #{config.temp_dir}")
+            comm.sudo(tmp_command, comm_opts)
           end
 
           verify_shared_folders(check)
@@ -124,6 +131,22 @@ module VagrantPlugins
             @hiera_config_path = File.join(config.temp_dir, "hiera.yaml")
             @machine.communicate.upload(local_hiera_path, @hiera_config_path)
           end
+
+          # Build up the structured custom facts if we have any
+          # With structured facts on, we assume the config.facter is yaml.
+          if config.structured_facts && !config.facter.empty?
+            @facter_config_path = "/etc/puppetlabs/facter/facts.d/vagrant_facts.yaml"
+            if windows?
+              @facter_config_path = "/ProgramData/PuppetLabs/facter/facts.d/vagrant_facts.yaml"
+            end
+            t = Tempfile.new("vagrant_facts.yaml")
+            t.write(config.facter.to_yaml)
+            t.close()
+            @machine.communicate.tap do |comm|
+              comm.upload(t.path, File.join(@config.temp_dir, "vagrant_facts.yaml"))
+              comm.sudo("cp #{config.temp_dir}/vagrant_facts.yaml #{@facter_config_path}")
+            end
+           end
 
           run_puppet_apply
         end
@@ -199,8 +222,6 @@ module VagrantPlugins
           if config.environment_path
             options << "--environmentpath #{environments_guest_path}/"
             options << "--environment #{@config.environment}"
-          else
-            options << "--manifestdir #{manifests_guest_path}"
           end
 
           options << @manifest_file
@@ -208,7 +229,8 @@ module VagrantPlugins
 
           # Build up the custom facts if we have any
           facter = nil
-          if !config.facter.empty?
+          # Build up the (non-structured) custom facts if we have any
+          if !config.structured_facts && !config.facter.empty?
             facts = []
             config.facter.each do |key, value|
               facts << "FACTER_#{key}='#{value}'"
@@ -237,9 +259,11 @@ module VagrantPlugins
               env_vars.map! do |env_var_string|
                 "$env:#{env_var_string}"
               end
+              env_vars = env_vars.join("; ")
+              env_vars << ";"
+            else
+              env_vars = env_vars.join(" ")
             end
-
-            env_vars = env_vars.join(" ")
           end
 
           command = [
@@ -273,6 +297,10 @@ module VagrantPlugins
             error_key: :ssh_bad_exit_status_muted,
             good_exit: [0,2],
           }
+
+          if windows?
+            opts[:shell] = :powershell
+          end
           @machine.communicate.sudo(command, opts) do |type, data|
             if !data.chomp.empty?
               @machine.ui.info(data.chomp)
@@ -283,14 +311,22 @@ module VagrantPlugins
         def verify_shared_folders(folders)
           folders.each do |folder|
             @logger.debug("Checking for shared folder: #{folder}")
-            if !@machine.communicate.test("test -d #{folder}", sudo: true)
+            if windows?
+              testcommand = "Test-Path #{folder}"
+              comm_opts = { shell: :powershell}
+            else
+              testcommand = "test -d #{folder}"
+              comm_opts = { sudo: true}
+            end
+
+            if !@machine.communicate.test(testcommand, comm_opts)
               raise PuppetError, :missing_shared_folders
             end
           end
         end
 
         def windows?
-          @machine.config.vm.communicator == :winrm
+          @machine.config.vm.communicator == :winrm || @machine.config.vm.communicator == :winssh
         end
       end
     end

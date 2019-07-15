@@ -45,6 +45,14 @@ module VagrantPlugins
         @driver
       end
 
+      def usable?(raise_error=false)
+        driver.execute("docker", "version")
+        true
+      rescue Vagrant::Errors::CommandUnavailable, Errors::ExecuteError
+        raise if raise_error
+        return false
+      end
+
       # This returns the {Vagrant::Machine} that is our host machine.
       # It does not perform any action on the machine or verify it is
       # running.
@@ -144,7 +152,7 @@ module VagrantPlugins
         if network["Ports"][port_name].respond_to?(:first)
           port_info = network["Ports"][port_name].first
         else
-          ip = network["IpAddress"]
+          ip = network["IPAddress"]
           port = @machine.config.ssh.guest_port
           if !ip.to_s.empty?
             port_info = {

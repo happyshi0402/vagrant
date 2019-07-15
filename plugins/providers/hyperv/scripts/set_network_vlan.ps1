@@ -1,18 +1,16 @@
-param (
-    [string]$VmId = $(throw "-VmId is required."),
-    [int]$VlanId = $(throw "-VlanId ")
- )
+#Requires -Modules VagrantMessages
 
-# Include the following modules
-$presentDir = Split-Path -parent $PSCommandPath
-$modules = @()
-$modules += $presentDir + "\utils\write_messages.ps1"
-forEach ($module in $modules) { . $module }
+param (
+    [parameter (Mandatory=$true)]
+    [string]$VmId,
+    [parameter (Mandatory=$true)]
+    [int]$VlanId
+)
 
 try {
-  $vm = Get-VM -Id $VmId -ErrorAction "stop"
-  Set-VMNetworkAdapterVlan $vm -Access -Vlanid $VlanId
+  $vm = Hyper-V\Get-VM -Id $VmId -ErrorAction "stop"
+  Hyper-V\Set-VMNetworkAdapterVlan $vm -Access -Vlanid $VlanId
 }
 catch {
-  Write-Error-Message "Failed to set VM's Vlan ID $_"
+  Write-ErrorMessage "Failed to set VM's Vlan ID $_"
 }

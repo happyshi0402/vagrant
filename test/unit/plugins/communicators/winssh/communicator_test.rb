@@ -22,7 +22,8 @@ describe VagrantPlugins::CommunicatorWinSSH::Communicator do
     double("winssh",
       insert_key: false,
       export_command_template: export_command_template,
-      shell: 'cmd'
+      shell: 'cmd',
+      upload_directory: "C:\\Windows\\Temp"
     )
   end
   # Configuration mock
@@ -126,7 +127,7 @@ describe VagrantPlugins::CommunicatorWinSSH::Communicator do
   describe ".ready?" do
     before(&connection_setup)
     it "returns true if shell test is successful" do
-      expect(communicator.ready?).to be_true
+      expect(communicator.ready?).to be_truthy
     end
 
     context "with an invalid shell test" do
@@ -208,7 +209,7 @@ describe VagrantPlugins::CommunicatorWinSSH::Communicator do
     before(&connection_setup)
     context "with exit code as zero" do
       it "returns true" do
-        expect(communicator.test("dir")).to be_true
+        expect(communicator.test("dir")).to be_truthy
       end
     end
 
@@ -218,19 +219,21 @@ describe VagrantPlugins::CommunicatorWinSSH::Communicator do
       end
 
       it "returns false" do
-        expect(communicator.test("false.exe")).to be_false
+        expect(communicator.test("false.exe")).to be_falsey
       end
     end
   end
 
   describe ".upload" do
     before do
+      allow(communicator).to receive(:create_remote_directory)
       expect(communicator).to receive(:scp_connect).and_yield(scp)
     end
 
     it "uploads a directory if local path is a directory" do
       Dir.mktmpdir('vagrant-test') do |dir|
-        expect(scp).to receive(:upload!).with(dir, 'C:\destination', recursive: true)
+        FileUtils.touch(File.join(dir, "test-file"))
+        expect(scp).to receive(:upload!).with(an_instance_of(File), /test-file/)
         communicator.upload(dir, 'C:\destination')
       end
     end
@@ -297,7 +300,7 @@ describe VagrantPlugins::CommunicatorWinSSH::Communicator do
           username: nil,
           password: nil,
           keys_only: true,
-          paranoid: false
+          verify_host_key: false
         )
       end
 
@@ -310,10 +313,10 @@ describe VagrantPlugins::CommunicatorWinSSH::Communicator do
         communicator.send(:connect)
       end
 
-      it "has paranoid disabled" do
+      it "has verify_host_key disabled" do
         expect(Net::SSH).to receive(:start).with(
           nil, nil, hash_including(
-            paranoid: false
+            verify_host_key: false
           )
         ).and_return(true)
         communicator.send(:connect)
@@ -338,7 +341,7 @@ describe VagrantPlugins::CommunicatorWinSSH::Communicator do
       end
     end
 
-    context "with keys_only disabled and paranoid enabled" do
+    context "with keys_only disabled and verify_host_key enabled" do
 
       before do
         expect(machine).to receive(:ssh_info).and_return(
@@ -348,7 +351,7 @@ describe VagrantPlugins::CommunicatorWinSSH::Communicator do
           username: nil,
           password: nil,
           keys_only: false,
-          paranoid: true
+          verify_host_key: true
         )
       end
 
@@ -361,10 +364,10 @@ describe VagrantPlugins::CommunicatorWinSSH::Communicator do
         communicator.send(:connect)
       end
 
-      it "has paranoid disabled" do
+      it "has verify_host_key disabled" do
         expect(Net::SSH).to receive(:start).with(
           nil, nil, hash_including(
-            paranoid: true
+            verify_host_key: true
           )
         ).and_return(true)
         communicator.send(:connect)
@@ -381,7 +384,7 @@ describe VagrantPlugins::CommunicatorWinSSH::Communicator do
           username: nil,
           password: nil,
           keys_only: true,
-          paranoid: false
+          verify_host_key: false
         )
       end
 
@@ -405,7 +408,7 @@ describe VagrantPlugins::CommunicatorWinSSH::Communicator do
           username: nil,
           password: nil,
           keys_only: true,
-          paranoid: false
+          verify_host_key: false
         )
       end
 
@@ -438,7 +441,7 @@ describe VagrantPlugins::CommunicatorWinSSH::Communicator do
           username: 'vagrant',
           password: 'vagrant',
           keys_only: true,
-          paranoid: false
+          verify_host_key: false
         )
       end
 
@@ -476,7 +479,7 @@ describe VagrantPlugins::CommunicatorWinSSH::Communicator do
           username: 'vagrant',
           password: 'vagrant',
           keys_only: true,
-          paranoid: false
+          verify_host_key: false
         )
       end
 
@@ -511,14 +514,14 @@ describe VagrantPlugins::CommunicatorWinSSH::Communicator do
 
   describe ".generate_environment_export" do
     it "should generate bourne shell compatible export" do
-      communicator.send(:generate_environment_export, "TEST", "value").should eq("export TEST=\"value\"\n")
+      expect(communicator.send(:generate_environment_export, "TEST", "value")).to eq("export TEST=\"value\"\n")
     end
 
     context "with custom template defined" do
       let(:export_command_template){ "setenv %ENV_KEY% %ENV_VALUE%" }
 
       it "should generate custom export based on template" do
-        communicator.send(:generate_environment_export, "TEST", "value").should eq("setenv TEST value\n")
+        expect(communicator.send(:generate_environment_export, "TEST", "value")).to eq("setenv TEST value\n")
       end
     end
   end

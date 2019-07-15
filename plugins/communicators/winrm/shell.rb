@@ -17,6 +17,10 @@ module VagrantPlugins
     class WinRMShell
       include Vagrant::Util::Retryable
 
+      # Exit code generated when user is invalid. Can occur
+      # after a hostname update
+      INVALID_USERID_EXITCODE = -196608
+
       # These are the exceptions that we retry because they represent
       # errors that are generally fixed from a retry and don't
       # necessarily represent immediate failure cases.
@@ -71,7 +75,22 @@ module VagrantPlugins
       def elevated(command, opts = {}, &block)
         connection.shell(:elevated) do |shell|
           shell.interactive_logon = opts[:interactive] || false
-          execute_with_rescue(shell, command, &block)
+          result = execute_with_rescue(shell, command, &block)
+          if result.exitcode == INVALID_USERID_EXITCODE && result.stderr.include?(":UserId:")
+            uname = shell.username
+            ename = elevated_username
+            if uname != ename
+              @logger.warn("elevated command failed due to username error")
+              @logger.warn("retrying command using machine prefixed username - #{ename}")
+              begin
+                shell.username = ename
+                result = execute_with_rescue(shell, command, &block)
+              ensure
+                shell.username = uname
+              end
+            end
+          end
+          result
         end
       end
 
@@ -83,9 +102,29 @@ module VagrantPlugins
         raise_winrm_exception(e, "run_wql", query)
       end
 
+      # @param from [Array<String>, String] a single path or folder, or an
+      #        array of paths and folders to upload to the guest
+      # @param to [String] a path or folder on the guest to upload to
+      # @return [FixNum] Total size transfered from host to guest
       def upload(from, to)
         file_manager = WinRM::FS::FileManager.new(connection)
-        file_manager.upload(from, to)
+        if from.is_a?(String) && File.directory?(from)
+          if from.end_with?(".")
+            from = from[0, from.length - 1]
+          else
+            to = File.join(to, File.basename(File.expand_path(from)))
+          end
+        end
+        if from.is_a?(Array)
+          # Preserve return FixNum of bytes transfered
+          return_bytes = 0
+          from.each do |file|
+            return_bytes += file_manager.upload(file, to)
+          end
+          return return_bytes
+        else
+          file_manager.upload(from, to)
+        end
       end
 
       def download(from, to)
@@ -202,6 +241,21 @@ module VagrantPlugins
           no_ssl_peer_verification: !@config.ssl_peer_verification,
           retry_delay: @config.retry_delay,
           retry_limit: @config.max_tries }
+      end
+
+      def elevated_username
+        if username.include?("\\")
+          return username
+        end
+        computername = ""
+        powershell("Write-Output $env:computername") do |type, data|
+          computername << data if type == :stdout
+        end
+        computername.strip!
+        if computername.empty?
+          return username
+        end
+        "#{computername}\\#{username}"
       end
     end #WinShell class
   end

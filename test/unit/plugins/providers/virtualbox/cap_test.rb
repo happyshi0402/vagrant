@@ -14,8 +14,8 @@ describe VagrantPlugins::ProviderVirtualBox::Cap do
 
   let(:machine) do
     iso_env.machine(iso_env.machine_names[0], :dummy).tap do |m|
-      m.provider.stub(driver: driver)
-      m.stub(state: state)
+      allow(m.provider).to receive(:driver).and_return(driver)
+      allow(m).to receive(:state).and_return(state)
     end
   end
 
@@ -38,6 +38,21 @@ describe VagrantPlugins::ProviderVirtualBox::Cap do
     it "returns nil when the machine is not running" do
       allow(machine).to receive(:state).and_return(double(:state, id: :stopped))
       expect(described_class.forwarded_ports(machine)).to be(nil)
+    end
+  end
+
+  describe "#snapshot_list" do
+    it "returns all the snapshots" do
+      allow(machine).to receive(:id).and_return("1234")
+      allow(driver).to receive(:list_snapshots).with(machine.id).
+        and_return(["backup", "old"])
+
+      expect(described_class.snapshot_list(machine)).to eq(["backup", "old"])
+    end
+
+    it "returns empty array when the machine is does not exist" do
+      allow(machine).to receive(:id).and_return(nil)
+      expect(described_class.snapshot_list(machine)).to eq([])
     end
   end
 end

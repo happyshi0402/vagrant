@@ -91,7 +91,7 @@ specify alternate NFS arguments when mounting the NFS share by using the
 
 ```ruby
 config.vm.synced_folder ".", "/vagrant",
-  nfs: true,
+  type: "nfs",
   mount_options: ['actimeo=2']
 ```
 
@@ -109,7 +109,7 @@ NFS share asynchronous:
 
 ```ruby
 config.vm.synced_folder ".", "/vagrant",
-  nfs: true,
+  type: "nfs",
   linux__nfs_options: ['rw','no_subtree_check','all_squash','async']
 ```
 
@@ -139,9 +139,16 @@ have to modify them _slightly_ on certain hosts because the way Vagrant
 modifies `/etc/exports` changes a bit from OS to OS. If the commands below
 are located in non-standard paths, modify them as appropriate.
 
+Also note that in the sudoer file format, entries are applied in order. If you've added the appropriate entries but still have to type in your password, make sure the entries aren't inserted too early. From the sudoers man page: "When multiple entries match for a user, they are applied in order. Where there are multiple matches, the last match is used (which is not necessarily the most specific match)."
+
 For \*nix users, make sure to edit your `/etc/sudoers` file with `visudo`. It protects you against syntax errors which could leave you without the ability to gain elevated privileges.
 
 All of the snippets below require Vagrant version 1.7.3 or higher.
+
+<div class="alert alert-warning" role="alert">
+  <strong>Use the appropriate group for your user</strong> Depending on how your machine is
+   configured, you might need to use a different group than the ones listed in the examples below.
+</div>
 
 For OS X, sudoers should have this entry:
 
@@ -175,6 +182,18 @@ Cmnd_Alias VAGRANT_NFSD_APPLY = /usr/sbin/exportfs -ar
 %vagrant ALL=(root) NOPASSWD: VAGRANT_EXPORTS_CHOWN, VAGRANT_EXPORTS_MV, VAGRANT_NFSD_CHECK, VAGRANT_NFSD_START, VAGRANT_NFSD_APPLY
 ```
 
+For SUSE Linux, sudoers might look like this (given your user
+belongs to the vagrant group):
+
+```
+Cmnd_Alias VAGRANT_CHOWN = /usr/bin/chown 0\:0 /tmp/vagrant[a-z0-9-]*
+Cmnd_Alias VAGRANT_MV = /usr/bin/mv -f /tmp/vagrant[a-z0-9-]* /etc/exports
+Cmnd_Alias VAGRANT_START = /sbin/service nfsserver start
+Cmnd_Alias VAGRANT_STATUS = /sbin/service nfsserver status
+Cmnd_Alias VAGRANT_APPLY = /usr/sbin/exportfs -ar
+%vagrant ALL=(root) NOPASSWD: VAGRANT_CHOWN, VAGRANT_MV, VAGRANT_START, VAGRANT_STATUS, VAGRANT_APPLY
+```
+
 If you don't want to edit `/etc/sudoers` directly, you can create
 `/etc/sudoers.d/vagrant-syncedfolders` with the appropriate entries,
 assuming `/etc/sudoers.d` has been enabled.
@@ -203,7 +222,7 @@ When using NFSv4, ensure the `nfs_udp` option is set to false. For example:
 
 ```ruby
 config.vm.synced_folder ".", "/vagrant",
-  nfs: true,
+  type: "nfs",
   nfs_version: 4,
   nfs_udp: false
 ```

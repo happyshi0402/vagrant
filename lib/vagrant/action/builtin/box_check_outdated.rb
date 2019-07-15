@@ -40,6 +40,7 @@ module Vagrant
           # Have download options specified in the environment override
           # options specified for the machine.
           download_options = {
+            automatic_check: true,
             ca_cert: env[:ca_cert] || machine.config.vm.box_download_ca_cert,
             ca_path: env[:ca_path] || machine.config.vm.box_download_ca_path,
             client_cert: env[:client_cert] ||
@@ -50,7 +51,8 @@ module Vagrant
 
           env[:ui].output(I18n.t(
             "vagrant.box_outdated_checking_with_refresh",
-            name: box.name))
+            name: box.name,
+            version: box.version))
           update = nil
           begin
             update = box.has_update?(constraints, download_options: download_options)
@@ -58,6 +60,9 @@ module Vagrant
             env[:ui].warn(I18n.t(
               "vagrant.box_outdated_metadata_download_error",
               message: e.extra_data[:message]))
+          rescue Errors::BoxMetadataMalformed  => e
+            @logger.warn(e.to_s)
+            env[:ui].warn(I18n.t("vagrant.box_malformed_continue_on_update"))
           rescue Errors::VagrantError => e
             raise if !env[:box_outdated_ignore_errors]
             env[:ui].detail(I18n.t(
@@ -69,6 +74,7 @@ module Vagrant
             env[:ui].warn(I18n.t(
               "vagrant.box_outdated_single",
               name: update[0].name,
+              provider: box.provider,
               current: box.version,
               latest: update[1].version))
           else

@@ -1,5 +1,6 @@
 Param(
   [string]$version,
+  [string]$pythonVersion = "2",
   [string]$runservice,
   [string]$minion,
   [string]$master
@@ -11,7 +12,12 @@ $startupType = "Manual"
 
 # Version to install - default to latest if there is an issue
 If ($version -notmatch "2\d{3}\.\d{1,2}\.\d+(\-\d{1})?"){
-  $version = '2016.11.3'
+  $version = '2018.3.3'
+}
+
+If ($pythonVersion -notmatch "\d+") {
+  $pythonVersion = "2"
+  Write-Host "Defaulting to minion Python version $pythonVersion"
 }
 
 If ($runservice.ToLower() -eq "true"){
@@ -49,11 +55,38 @@ If ([IntPtr]::Size -eq 4) {
 }
 
 # Download minion setup file
-Write-Host "Downloading Salt minion installer Salt-Minion-$version-$arch-Setup.exe"
+$minionFilename = "Salt-Minion-$version-$arch-Setup.exe"
+$versionYear = [regex]::Match($version, "\d+").Value
+If ([convert]::ToInt32($versionYear) -ge 2017)
+{
+  $minionFilename = "Salt-Minion-$version-Py$pythonVersion-$arch-Setup.exe"
+}
+Write-Host "Downloading Salt minion installer $minionFilename"
 $webclient = New-Object System.Net.WebClient
-$url = "https://repo.saltstack.com/windows/Salt-Minion-$version-$arch-Setup.exe"
+$url = "https://repo.saltstack.com/windows/$minionFilename"
 $file = "C:\tmp\salt.exe"
-$webclient.DownloadFile($url, $file)
+
+[int]$retries = 0
+Do {
+ try {
+    $retries++
+    $ErrorActionPreference='Stop'
+    $webclient.DownloadFile($url, $file)
+    break
+ } catch [Exception] {
+    if($retries -eq 5) {
+        $_
+        $_.GetType()
+        $_.Exception
+        $_.Exception.StackTrace
+        Write-Host
+        exit 1
+    }
+    Write-Warning "Retrying download in 2 seconds. Retry # $retries"
+    Start-Sleep -s 2
+    }
+}
+Until($retries -eq 5)
 
 
 # Install minion silently

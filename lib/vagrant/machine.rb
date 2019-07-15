@@ -110,6 +110,7 @@ module Vagrant
       @ui              = Vagrant::UI::Prefixed.new(@env.ui, @name)
       @ui_mutex        = Mutex.new
       @state_mutex     = Mutex.new
+      @triggers        = Vagrant::Plugin::V2::Trigger.new(@env, @config.trigger, self, @ui)
 
       # Read the ID, which is usually in local storage
       @id = nil
@@ -159,6 +160,8 @@ module Vagrant
     #   as extra data set on the environment hash for the middleware
     #   runner.
     def action(name, opts=nil)
+      @triggers.fire_triggers(name, :before, @name.to_s, :action)
+
       @logger.info("Calling action: #{name} on provider #{@provider}")
 
       opts ||= {}
@@ -169,6 +172,10 @@ module Vagrant
 
       # Extra env keys are the remaining opts
       extra_env = opts.dup
+      # An environment is required for triggers to function properly. This is
+      # passed in specifically for the `#Action::Warden` class triggers. We call it
+      # `:trigger_env` instead of `env` in case it collides with an existing environment
+      extra_env[:trigger_env] = @env
 
       check_cwd # Warns the UI if the machine was last used on a different dir
 
@@ -185,7 +192,7 @@ module Vagrant
       locker = @env.method(:lock) if lock && !name.to_s.start_with?("ssh")
 
       # Lock this machine for the duration of this action
-      locker.call("machine-action-#{id}") do
+      return_env = locker.call("machine-action-#{id}") do
         # Get the callable from the provider.
         callable = @provider.action(name)
 
@@ -203,6 +210,10 @@ module Vagrant
         ui.machine("action", name.to_s, "end")
         action_result
       end
+
+      @triggers.fire_triggers(name, :after, @name.to_s, :action)
+      # preserve returning environment after machine action runs
+      return return_env
     rescue Errors::EnvironmentLockedError
       raise Errors::MachineActionLockedError,
         action: name,
@@ -388,7 +399,10 @@ module Vagrant
         # Read the id file from the data directory if it exists as the
         # ID for the pre-existing physical representation of this machine.
         id_file = @data_dir.join("id")
-        @id = id_file.read.chomp if id_file.file?
+        id_content = id_file.read.strip if id_file.file?
+        if !id_content.to_s.empty?
+          @id = id_content
+        end
       end
 
       if @id != old_id && @provider
@@ -438,19 +452,29 @@ module Vagrant
       info[:port] ||= @config.ssh.default.port
       info[:private_key_path] ||= @config.ssh.default.private_key_path
       info[:keys_only] ||= @config.ssh.default.keys_only
-      info[:paranoid] ||= @config.ssh.default.paranoid
+      info[:verify_host_key] ||= @config.ssh.default.verify_host_key
       info[:username] ||= @config.ssh.default.username
+      info[:remote_user] ||= @config.ssh.default.remote_user
+      info[:compression] ||= @config.ssh.default.compression
+      info[:dsa_authentication] ||= @config.ssh.default.dsa_authentication
+      info[:extra_args] ||= @config.ssh.default.extra_args
+      info[:config] ||= @config.ssh.default.config
 
       # We set overrides if they are set. These take precedence over
       # provider-returned data.
       info[:host] = @config.ssh.host if @config.ssh.host
       info[:port] = @config.ssh.port if @config.ssh.port
       info[:keys_only] = @config.ssh.keys_only
-      info[:paranoid] = @config.ssh.paranoid
+      info[:verify_host_key] = @config.ssh.verify_host_key
+      info[:compression] = @config.ssh.compression
+      info[:dsa_authentication] = @config.ssh.dsa_authentication
       info[:username] = @config.ssh.username if @config.ssh.username
       info[:password] = @config.ssh.password if @config.ssh.password
+      info[:remote_user] = @config.ssh.remote_user if @config.ssh.remote_user
+      info[:extra_args] = @config.ssh.extra_args if @config.ssh.extra_args
+      info[:config] = @config.ssh.config if @config.ssh.config
 
-      # We also set some fields that are purely controlled by Varant
+      # We also set some fields that are purely controlled by Vagrant
       info[:forward_agent] = @config.ssh.forward_agent
       info[:forward_x11]   = @config.ssh.forward_x11
       info[:forward_env]   = @config.ssh.forward_env
@@ -567,19 +591,24 @@ module Vagrant
     # from its previous location on disk. If the machine
     # has moved, it prints a warning to the user.
     def check_cwd
+      desired_encoding = @env.root_path.to_s.encoding
       vagrant_cwd_filepath = @data_dir.join('vagrant_cwd')
       vagrant_cwd = if File.exist?(vagrant_cwd_filepath)
-        File.read(vagrant_cwd_filepath).chomp
-      end
+                      File.read(vagrant_cwd_filepath,
+                        external_encoding: desired_encoding
+                      ).chomp
+                    end
 
-      if vagrant_cwd.nil?
-        File.write(vagrant_cwd_filepath, @env.cwd)
-      elsif vagrant_cwd != @env.cwd.to_s
-        ui.warn(I18n.t(
-          'vagrant.moved_cwd',
-          old_wd:     vagrant_cwd,
-          current_wd: @env.cwd.to_s))
-        File.write(vagrant_cwd_filepath, @env.cwd)
+      if !File.identical?(vagrant_cwd.to_s, @env.root_path.to_s)
+        if vagrant_cwd
+          ui.warn(I18n.t(
+            'vagrant.moved_cwd',
+            old_wd:     "#{vagrant_cwd}",
+            current_wd: "#{@env.root_path.to_s}"))
+        end
+        File.write(vagrant_cwd_filepath, @env.root_path.to_s,
+          external_encoding: desired_encoding
+        )
       end
     end
   end

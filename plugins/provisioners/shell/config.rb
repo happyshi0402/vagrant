@@ -14,8 +14,11 @@ module VagrantPlugins
       attr_accessor :binary
       attr_accessor :keep_color
       attr_accessor :name
+      attr_accessor :sensitive
       attr_accessor :powershell_args
       attr_accessor :powershell_elevated_interactive
+      attr_accessor :reboot
+      attr_accessor :reset
 
       def initialize
         @args                  = UNSET_VALUE
@@ -29,6 +32,9 @@ module VagrantPlugins
         @binary                = UNSET_VALUE
         @keep_color            = UNSET_VALUE
         @name                  = UNSET_VALUE
+        @sensitive             = UNSET_VALUE
+        @reboot                = UNSET_VALUE
+        @reset                 = UNSET_VALUE
         @powershell_args       = UNSET_VALUE
         @powershell_elevated_interactive  = UNSET_VALUE
       end
@@ -45,11 +51,20 @@ module VagrantPlugins
         @binary               = false if @binary == UNSET_VALUE
         @keep_color           = false if @keep_color == UNSET_VALUE
         @name                 = nil if @name == UNSET_VALUE
+        @sensitive            = false if @sensitive == UNSET_VALUE
+        @reboot               = false if @reboot == UNSET_VALUE
+        @reset                = false if @reset == UNSET_VALUE
         @powershell_args      = "-ExecutionPolicy Bypass" if @powershell_args == UNSET_VALUE
         @powershell_elevated_interactive = false if @powershell_elevated_interactive == UNSET_VALUE
 
         if @args && args_valid?
           @args = @args.is_a?(Array) ? @args.map { |a| a.to_s } : @args.to_s
+        end
+
+        if @sensitive
+          @env.each do |_, v|
+            Vagrant::Util::CredentialScrubber.sensitive(v)
+          end
         end
       end
 
@@ -59,7 +74,7 @@ module VagrantPlugins
         # Validate that the parameters are properly set
         if path && inline
           errors << I18n.t("vagrant.provisioners.shell.path_and_inline_set")
-        elsif !path && !inline
+        elsif !path && !inline && !reset && !reboot
           errors << I18n.t("vagrant.provisioners.shell.no_path_or_inline")
         end
 
@@ -106,10 +121,10 @@ module VagrantPlugins
       def args_valid?
         return true if !args
         return true if args.is_a?(String)
-        return true if args.is_a?(Fixnum)
+        return true if args.is_a?(Integer)
         if args.is_a?(Array)
           args.each do |a|
-            return false if !a.kind_of?(String) && !a.kind_of?(Fixnum)
+            return false if !a.kind_of?(String) && !a.kind_of?(Integer)
           end
 
           return true

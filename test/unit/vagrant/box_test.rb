@@ -110,7 +110,7 @@ describe Vagrant::Box, :skip_windows do
       }
       RAW
 
-      subject.stub(load_metadata: metadata)
+      allow(subject).to receive(:load_metadata).and_return(metadata)
 
       expect(subject.has_update?).to be_nil
     end
@@ -136,7 +136,7 @@ describe Vagrant::Box, :skip_windows do
       }
       RAW
 
-      subject.stub(load_metadata: metadata)
+      allow(subject).to receive(:load_metadata).and_return(metadata)
 
       result = subject.has_update?
       expect(result).to_not be_nil
@@ -180,7 +180,7 @@ describe Vagrant::Box, :skip_windows do
       }
       RAW
 
-      subject.stub(load_metadata: metadata)
+      allow(subject).to receive(:load_metadata).and_return(metadata)
 
       result = subject.has_update?(">= 1.1, < 1.4")
       expect(result).to_not be_nil
@@ -192,6 +192,28 @@ describe Vagrant::Box, :skip_windows do
       expect(result[0].name).to eq("foo")
       expect(result[1].version).to eq("1.1")
       expect(result[2].url).to eq("bar")
+    end
+  end
+
+  context "#automatic_update_check_allowed?" do
+    it "should return true on intial check" do
+      expect(subject.automatic_update_check_allowed?).to be_truthy
+    end
+
+    it "should return false on second check" do
+      expect(subject.automatic_update_check_allowed?).to be_truthy
+      expect(subject.automatic_update_check_allowed?).to be_falsey
+    end
+
+    it "should use a file to mark last check time" do
+      expect(FileUtils).to receive(:touch)
+      subject.automatic_update_check_allowed?
+    end
+
+    it "should return true when time since last check is greater than check interval" do
+      subject.automatic_update_check_allowed?
+      stub_const("Vagrant::Box::BOX_UPDATE_CHECK_INTERVAL", -1)
+      expect(subject.automatic_update_check_allowed?).to be_truthy
     end
   end
 
@@ -256,8 +278,8 @@ describe Vagrant::Box, :skip_windows do
 
     it "raises an error if the download failed" do
       dl = double("downloader")
-      Vagrant::Util::Downloader.stub(new: dl)
-      dl.should_receive(:download!).and_raise(
+      allow(Vagrant::Util::Downloader).to receive(:new).and_return(dl)
+      expect(dl).to receive(:download!).and_raise(
         Vagrant::Errors::DownloaderError.new(message: "foo"))
 
       expect { subject.load_metadata }.
@@ -298,7 +320,7 @@ describe Vagrant::Box, :skip_windows do
       FileUtils.rm_rf(scratch)
     end
 
-    it "should repackage the box" do
+    it "should repackage the box", :bsdtar do
       test_file_contents = "hello, world!"
 
       # Put a file in the box directory to verify it is packaged properly
@@ -308,7 +330,7 @@ describe Vagrant::Box, :skip_windows do
       end
 
       # Repackage our box to some temporary directory
-      expect(subject.repackage(box_output_path)).to be_true
+      expect(subject.repackage(box_output_path)).to be(true)
 
       # Let's now add this box again under a different name, and then
       # verify that we get the proper result back.

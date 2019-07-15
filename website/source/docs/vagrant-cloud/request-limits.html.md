@@ -1,5 +1,5 @@
 ---
-layout: "docs"
+layout: "vagrant-cloud"
 page_title: "Request Limits"
 sidebar_current: "vagrant-cloud-request-limits"
 ---
@@ -28,4 +28,7 @@ If you have received a 429 HTTP status code in the response to your request, you
 
 ## My use case requires more requests.  What do I do?
 
-Please contact support@hashicorp.com.
+Please contact
+<a href="mailto:support+vagrantcloud@hashicorp.com">
+support+vagrantcloud@hashicorp.com
+</a>.

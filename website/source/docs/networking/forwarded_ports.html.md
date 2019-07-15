@@ -67,7 +67,7 @@ there are more detailed examples of using these options.
   that will be allowed through the forwarded port. By default this is "tcp".
 
 * `id` (string) - Name of the rule (can be visible in VirtualBox). By 
-  default this is "protocol""guest" (exemple : "tcp123").
+  default this is "protocol""guest" (example : "tcp123").
 
 ## Forwarded Port Protocols
 
@@ -111,3 +111,12 @@ The final `:auto_correct` parameter set to true tells Vagrant to auto
 correct any collisions. During a `vagrant up` or `vagrant reload`, Vagrant
 will output information about any collisions detections and auto corrections
 made, so you can take notice and act accordingly.
+
+You can define allowed port range assignable by Vagrant when port collision is
+detected via [config.vm.usable_port_range](/docs/vagrantfile/machine_settings.html) property.
+
+```ruby
+Vagrant.configure("2") do |config|
+  config.vm.usable_port_range = 8000..8999
+end
+```

@@ -4,7 +4,7 @@ require "pathname"
 require "vagrant/plugin"
 require "vagrant/plugin/manager"
 require "vagrant/plugin/state_file"
-
+require "vagrant/util/deep_merge"
 require File.expand_path("../../../base", __FILE__)
 
 describe Vagrant::Plugin::Manager do
@@ -21,18 +21,203 @@ describe Vagrant::Plugin::Manager do
   end
 
   before do
-    Vagrant::Bundler.stub(instance: bundler)
+    allow(Vagrant::Bundler).to receive(:instance).and_return(bundler)
   end
 
   subject { described_class.new(path) }
+
+  describe "#globalize!" do
+    let(:plugins) { double("plugins") }
+
+    before do
+      allow(subject).to receive(:bundler_init)
+      allow(subject).to receive(:installed_plugins).and_return(plugins)
+    end
+
+    it "should init bundler with installed plugins" do
+      expect(subject).to receive(:bundler_init).with(plugins)
+      subject.globalize!
+    end
+
+    it "should return installed plugins" do
+      expect(subject.globalize!).to eq(plugins)
+    end
+  end
+
+  describe "#localize!" do
+    let(:env) { double("env", local_data_path: local_data_path) }
+    let(:local_data_path) { double("local_data_path") }
+    let(:plugins) { double("plugins") }
+    let(:state_file) { double("state_file", installed_plugins: plugins) }
+
+    before do
+      allow(Vagrant::Plugin::StateFile).to receive(:new).and_return(state_file)
+      allow(bundler).to receive(:environment_path=)
+      allow(local_data_path).to receive(:join).and_return(local_data_path)
+      allow(subject).to receive(:bundler_init)
+    end
+
+    context "without local data path defined" do
+      let(:local_data_path) { nil }
+
+      it "should not do any initialization" do
+        expect(subject).not_to receive(:bundler_init)
+        subject.localize!(env)
+      end
+
+      it "should return nil" do
+        expect(subject.localize!(env)).to be_nil
+      end
+    end
+
+    it "should run bundler initialization" do
+      expect(subject).to receive(:bundler_init).with(plugins)
+      subject.localize!(env)
+    end
+
+    it "should return plugins" do
+      expect(subject.localize!(env)).to eq(plugins)
+    end
+  end
+
+  describe "#ready?" do
+    let(:plugins) { double("plugins") }
+    let(:env) { double("env", local_data_path: nil) }
+
+    before do
+      allow(subject).to receive(:bundler_init)
+    end
+
+    it "should be false by default" do
+      expect(subject.ready?).to be_falsey
+    end
+
+    it "should be false when only globalize! has been called" do
+      subject.globalize!
+      expect(subject.ready?).to be_falsey
+    end
+
+    it "should be false when only localize! has been called" do
+      subject.localize!(env)
+      expect(subject.ready?).to be_falsey
+    end
+
+    it "should be true when both localize! and globalize! have been called" do
+      subject.globalize!
+      subject.localize!(env)
+      expect(subject.ready?).to be_truthy
+    end
+  end
+
+  describe "#bundler_init" do
+    let(:plugins) { {"plugin_name" => {}} }
+
+    before do
+      allow(Vagrant).to receive(:plugins_init?).and_return(true)
+      allow(bundler).to receive(:init!)
+    end
+
+    it "should init the bundler instance with plugins" do
+      expect(bundler).to receive(:init!).with(plugins)
+      subject.bundler_init(plugins)
+    end
+
+    it "should return nil" do
+      expect(subject.bundler_init(plugins)).to be_nil
+    end
+
+    context "with plugin init disabled" do
+      before { expect(Vagrant).to receive(:plugins_init?).and_return(false) }
+
+      it "should return nil" do
+        expect(subject.bundler_init(plugins)).to be_nil
+      end
+
+      it "should not init the bundler instance" do
+        expect(bundler).not_to receive(:init!).with(plugins)
+        subject.bundler_init(plugins)
+      end
+    end
+  end
+
+  describe "#plugin_installed?" do
+    let(:ready) { true }
+    let(:specs) { [] }
+
+    before do
+      allow(subject).to receive(:ready?).and_return(ready)
+      allow(subject).to receive(:installed_specs).and_return(specs)
+    end
+
+    context "when manager is ready" do
+      it "should return false when plugin is not found" do
+        expect(subject.plugin_installed?("vagrant-plugin")).to be_falsey
+      end
+
+      context "when plugin is installed" do
+        let(:specs) { [Gem::Specification.new("vagrant-plugin", "1.2.3")] }
+
+        it "should return true" do
+          expect(subject.plugin_installed?("vagrant-plugin")).to be_truthy
+        end
+
+        it "should return true when version matches installed version" do
+          expect(subject.plugin_installed?("vagrant-plugin", "1.2.3")).to be_truthy
+        end
+
+        it "should return true when version requirement is satisified by version" do
+          expect(subject.plugin_installed?("vagrant-plugin", "> 1.0")).to be_truthy
+        end
+
+        it "should return false when version requirement is not satisified by version" do
+          expect(subject.plugin_installed?("vagrant-plugin", "2.0")).to be_falsey
+        end
+      end
+    end
+
+    context "when manager is not ready" do
+      let(:ready) { false }
+      let(:plugins) { {} }
+      before { allow(subject).to receive(:installed_plugins).and_return(plugins) }
+
+      it "should check installed plugin data" do
+        expect(subject).to receive(:installed_plugins).and_return(plugins)
+        subject.plugin_installed?("vagrant-plugin")
+      end
+
+      it "should return false when plugin is not found" do
+        expect(subject.plugin_installed?("vagrant-plugin")).to be_falsey
+      end
+
+      context "when plugin is installed" do
+        let(:plugins) { {"vagrant-plugin" => {"installed_gem_version" => "1.2.3"}} }
+
+        it "should return true" do
+          expect(subject.plugin_installed?("vagrant-plugin")).to be_truthy
+        end
+
+        it "should return true when version matches installed version" do
+          expect(subject.plugin_installed?("vagrant-plugin", "1.2.3")).to be_truthy
+        end
+
+        it "should return true when version requirement is satisified by version" do
+          expect(subject.plugin_installed?("vagrant-plugin", "> 1.0")).to be_truthy
+        end
+
+        it "should return false when version requirement is not satisified by version" do
+          expect(subject.plugin_installed?("vagrant-plugin", "2.0")).to be_falsey
+        end
+      end
+    end
+  end
 
   describe "#install_plugin" do
     it "installs the plugin and adds it to the state file" do
       specs = Array.new(5) { Gem::Specification.new }
       specs[3].name = "foo"
-      expect(bundler).to receive(:install).once.with { |plugins, local|
+      expect(bundler).to receive(:install).once.with(any_args) { |plugins, local|
         expect(plugins).to have_key("foo")
-        expect(local).to be_false
+        expect(local).to be_falsey
       }.and_return(specs)
       expect(bundler).to receive(:clean)
 
@@ -92,10 +277,10 @@ describe Vagrant::Plugin::Manager do
       end
 
       it "installs a version with constraints" do
-        expect(bundler).to receive(:install).once.with { |plugins, local|
+        expect(bundler).to receive(:install).once.with(any_args) { |plugins, local|
           expect(plugins).to have_key("foo")
           expect(plugins["foo"]["gem_version"]).to eql(">= 0.1.0")
-          expect(local).to be_false
+          expect(local).to be_falsey
         }.and_return(specs)
         expect(bundler).to receive(:clean)
 
@@ -107,10 +292,10 @@ describe Vagrant::Plugin::Manager do
       end
 
       it "installs with an exact version but doesn't constrain" do
-        expect(bundler).to receive(:install).once.with { |plugins, local|
+        expect(bundler).to receive(:install).once.with(any_args) { |plugins, local|
           expect(plugins).to have_key("foo")
           expect(plugins["foo"]["gem_version"]).to eql("0.1.0")
-          expect(local).to be_false
+          expect(local).to be_falsey
         }.and_return(specs)
         expect(bundler).to receive(:clean)
 
@@ -140,6 +325,8 @@ describe Vagrant::Plugin::Manager do
     end
 
     it "masks bundler errors with our own error" do
+      sf = Vagrant::Plugin::StateFile.new(path)
+      sf.add_plugin("foo")
       expect(bundler).to receive(:clean).and_raise(Gem::InstallError)
 
       expect { subject.uninstall_plugin("foo") }.
@@ -152,7 +339,7 @@ describe Vagrant::Plugin::Manager do
       before do
         systems_path.unlink
 
-        described_class.stub(system_plugins_file: systems_path)
+        allow(described_class).to receive(:system_plugins_file).and_return(systems_path)
 
         sf = Vagrant::Plugin::StateFile.new(systems_path)
         sf.add_plugin("foo", version: "0.2.0")
@@ -170,7 +357,7 @@ describe Vagrant::Plugin::Manager do
         subject.uninstall_plugin("bar")
 
         plugins = subject.installed_plugins
-        expect(plugins["foo"]["system"]).to be_true
+        expect(plugins["foo"]["system"]).to be(true)
       end
 
       it "raises an error if uninstalling a system gem" do
@@ -230,7 +417,7 @@ describe Vagrant::Plugin::Manager do
       before do
         systems_path.unlink
 
-        described_class.stub(system_plugins_file: systems_path)
+        allow(described_class).to receive(:system_plugins_file).and_return(systems_path)
 
         sf = Vagrant::Plugin::StateFile.new(systems_path)
         sf.add_plugin("foo", version: "0.2.0")
@@ -243,9 +430,9 @@ describe Vagrant::Plugin::Manager do
           expect(plugins.length).to eql(2)
           expect(plugins).to have_key("foo")
           expect(plugins["foo"]["gem_version"]).to eq("0.1.0")
-          expect(plugins["foo"]["system"]).to be_false
+          expect(plugins["foo"]["system"]).to be_truthy
           expect(plugins).to have_key("bar")
-          expect(plugins["bar"]["system"]).to be_true
+          expect(plugins["bar"]["system"]).to be(true)
         end
       end
     end

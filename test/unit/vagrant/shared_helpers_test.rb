@@ -18,25 +18,25 @@ describe Vagrant do
   describe "#in_installer?" do
     it "is not if env is not set" do
       with_temp_env("VAGRANT_INSTALLER_ENV" => nil) do
-        expect(subject.in_installer?).to be_false
+        expect(subject.in_installer?).to be(false)
       end
     end
 
     it "is if env is set" do
       with_temp_env("VAGRANT_INSTALLER_ENV" => "/foo") do
-        expect(subject.in_installer?).to be_true
+        expect(subject.in_installer?).to be(true)
       end
     end
   end
 
   describe "#installer_embedded_dir" do
     it "returns nil if not in an installer" do
-      Vagrant.stub(in_installer?: false)
+      allow(Vagrant).to receive(:in_installer?).and_return(false)
       expect(subject.installer_embedded_dir).to be_nil
     end
 
     it "returns the set directory" do
-      Vagrant.stub(in_installer?: true)
+      allow(Vagrant).to receive(:in_installer?).and_return(true)
 
       with_temp_env("VAGRANT_INSTALLER_EMBEDDED_DIR" => "/foo") do
         expect(subject.installer_embedded_dir).to eq("/foo")
@@ -47,13 +47,13 @@ describe Vagrant do
   describe "#plugins_enabled?" do
     it "returns true if the env is not set" do
       with_temp_env("VAGRANT_NO_PLUGINS" => nil) do
-        expect(subject.plugins_enabled?).to be_true
+        expect(subject.plugins_enabled?).to be(true)
       end
     end
 
     it "returns false if the env is set" do
       with_temp_env("VAGRANT_NO_PLUGINS" => "1") do
-        expect(subject.plugins_enabled?).to be_false
+        expect(subject.plugins_enabled?).to be(false)
       end
     end
   end
@@ -119,7 +119,7 @@ describe Vagrant do
       end
     end
 
-    it "prefers VAGRANT_HOME over USERPOFILE if both are set" do
+    it "prefers VAGRANT_HOME over USERPROFILE if both are set" do
       env = {
         "USERPROFILE" => "/bar",
         "VAGRANT_HOME" => "/foo",
@@ -141,6 +141,39 @@ describe Vagrant do
     it "should return false when Vagrant version is release" do
       stub_const("Vagrant::VERSION", "1.0.0")
       expect(subject.prerelease?).to be(false)
+    end
+  end
+
+  describe "#enable_resolv_replace" do
+    it "should not attempt to require resolv-replace by default" do
+      expect(subject).not_to receive(:require).with("resolv-replace")
+      subject.enable_resolv_replace
+    end
+
+    it "should require resolv-replace when VAGRANT_ENABLE_RESOLV_REPLACE is set" do
+      expect(subject).to receive(:require).with("resolv-replace")
+      with_temp_env("VAGRANT_ENABLE_RESOLV_REPLACE" => "1"){ subject.enable_resolv_replace }
+    end
+
+    it "should not require resolv-replace when VAGRANT_DISABLE_RESOLV_REPLACE is set" do
+      expect(subject).not_to receive(:require).with("resolv-replace")
+      with_temp_env("VAGRANT_ENABLE_RESOLV_REPLACE" => "1", "VAGRANT_DISABLE_RESOLV_REPLACE" => "1") do
+        subject.enable_resolv_replace
+      end
+    end
+  end
+
+  describe "#global_logger" do
+    after{ subject.global_logger = nil }
+
+    it "should return a logger when none have been provided" do
+      expect(subject.global_logger).not_to be_nil
+    end
+
+    it "should return previously set logger" do
+      logger = double("logger")
+      expect(subject.global_logger = logger).to eq(logger)
+      expect(subject.global_logger).to eq(logger)
     end
   end
 end

@@ -11,11 +11,11 @@ describe VagrantPlugins::CommandPlugin::Action::UninstallPlugin do
   subject { described_class.new(app, env) }
 
   before do
-    Vagrant::Plugin::Manager.stub(instance: manager)
+    allow(Vagrant::Plugin::Manager).to receive(:instance).and_return(manager)
   end
 
   it "uninstalls the specified plugin" do
-    expect(manager).to receive(:uninstall_plugin).with("bar").ordered
+    expect(manager).to receive(:uninstall_plugin).with("bar", any_args).ordered
     expect(app).to receive(:call).ordered
 
     env[:plugin_name] = "bar"

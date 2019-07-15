@@ -8,11 +8,6 @@ require "vagrant/util/platform"
 
 require_relative "../helper"
 
-# This is to avoid a bug in nio 1.0.0. Remove around nio 1.0.1
-if Vagrant::Util::Platform.windows?
-  ENV["NIO4R_PURE"] = "1"
-end
-
 require "listen"
 
 module VagrantPlugins
@@ -38,6 +33,10 @@ module VagrantPlugins
             o.on("--[no-]poll", "Force polling filesystem (slow)") do |poll|
               options[:poll] = poll
             end
+
+            o.on("--[no-]rsync-chown", "Use rsync to modify ownership") do |chown|
+              options[:rsync_chown] = chown
+            end
           end
 
           # Parse the options and return if we don't have any target.
@@ -48,6 +47,9 @@ module VagrantPlugins
           paths = {}
           ignores = []
           with_target_vms(argv) do |machine|
+            next if machine.state.id == :not_created
+            cwd = machine.env.cwd.to_s
+
             if machine.provider.capability?(:proxy_machine)
               proxy = machine.provider.capability(:proxy_machine)
               if proxy
@@ -69,6 +71,29 @@ module VagrantPlugins
 
             folders = cached[:rsync]
             next if !folders || folders.empty?
+
+            # NOTE: This check is required with boot2docker since all containers
+            # share the same virtual machine. This prevents rsync-auto from
+            # syncing all known containers with rsync to the boot2docker vm
+            # and only syncs the current working dirs folders.
+            sync_folders = {}
+            # Still sync existing synced folders from vagrantfile
+            config_synced_folders = machine.config.vm.synced_folders.values.map { |x| x[:hostpath] }
+            config_synced_folders.map! { |x| File.expand_path(x, machine.env.root_path) }
+            folders.each do |id, folder_opts|
+              if cwd != folder_opts[:hostpath] &&
+                  !config_synced_folders.include?(folder_opts[:hostpath])
+
+                machine.ui.info(I18n.t("vagrant.rsync_auto_remove_folder",
+                                    folder: folder_opts[:hostpath]))
+              else
+                if options.has_key?(:rsync_chown)
+                  folder_opts = folder_opts.merge(rsync_ownership: options[:rsync_chown])
+                end
+                sync_folders[id] = folder_opts
+              end
+            end
+            folders = sync_folders
 
             # Get the SSH info for this machine so we can do an initial
             # sync to the VM.
@@ -96,9 +121,13 @@ module VagrantPlugins
 
               if folder_opts[:exclude]
                 Array(folder_opts[:exclude]).each do |pattern|
-                  ignores << RsyncHelper.exclude_to_regexp(hostpath, pattern.to_s)
+                  ignores << RsyncHelper.exclude_to_regexp(pattern.to_s)
                 end
               end
+
+              # Always ignore Vagrant
+              ignores << /.vagrant\//
+              ignores.uniq!
             end
           end
 
@@ -194,6 +223,10 @@ module VagrantPlugins
                 # halt is happening. Just notify the user but don't fail out.
                 opts[:machine].ui.error(I18n.t(
                   "vagrant.rsync_communicator_not_ready_callback"))
+              rescue Vagrant::Errors::RSyncPostCommandError => e
+                # Error executing rsync chown command
+                opts[:machine].ui.error(I18n.t(
+                  "vagrant.rsync_auto_post_command_error", message: e.to_s))
               rescue Vagrant::Errors::RSyncError => e
                 # Error executing rsync, so show an error
                 opts[:machine].ui.error(I18n.t(

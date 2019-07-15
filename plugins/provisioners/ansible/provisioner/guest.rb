@@ -10,12 +10,14 @@ module VagrantPlugins
 
         def initialize(machine, config)
           super
+          @control_machine = "guest"
           @logger = Log4r::Logger.new("vagrant::provisioners::ansible_guest")
         end
 
         def provision
           check_files_existence
           check_and_install_ansible
+
           execute_ansible_galaxy_on_guest if config.galaxy_role_file
           execute_ansible_playbook_on_guest
         end
@@ -25,14 +27,17 @@ module VagrantPlugins
         #
         # This handles verifying the Ansible installation, installing it if it was
         # requested, and so on. This method will raise exceptions if things are wrong.
+        # The compatibility mode checks are also performed here in order to fetch the
+        # Ansible version information only once.
         #
         # Current limitations:
-        #   - The installation of a specific Ansible version is not supported.
-        #     Such feature is difficult to systematically provide via package repositories (apt, yum, ...).
-        #     Installing via pip python packaging or directly from github source would be appropriate,
-        #     but these approaches require more dependency burden.
-        #   - There is no guarantee that the automated installation will replace
-        #     a previous Ansible installation.
+        #   - The installation of a specific Ansible version is only supported by
+        #     the "pip" install_mode. Note that "pip" installation also takes place
+        #     via a default command. If pip needs to be installed differently then 
+        #     the command can be overwritten by supplying "pip_install_cmd" in the
+        #     config settings.
+        #   - There is no absolute guarantee that the automated installation will replace
+        #     a previous Ansible installation (although it works fine in many cases)
         #
         def check_and_install_ansible
           @logger.info("Checking for Ansible installation...")
@@ -49,22 +54,40 @@ module VagrantPlugins
              (config.version.to_s.to_sym == :latest ||
               !@machine.guest.capability(:ansible_installed, config.version))
             @machine.ui.detail I18n.t("vagrant.provisioners.ansible.installing")
-            @machine.guest.capability(:ansible_install, config.install_mode, config.version, config.pip_args)
+            @machine.guest.capability(:ansible_install, config.install_mode, config.version, config.pip_args, config.pip_install_cmd)
           end
 
-          # Check that Ansible Playbook command is available on the guest
-          @machine.communicate.execute(
-            "test -x \"$(command -v #{config.playbook_command})\"",
-            error_class: Ansible::Errors::AnsibleNotFoundOnGuest,
-            error_key: :ansible_not_found_on_guest
-          )
+          # This step will also fetch the Ansible version data into related instance variables
+          set_and_check_compatibility_mode
 
           # Check if requested ansible version is available
           if (!config.version.empty? &&
               config.version.to_s.to_sym != :latest &&
-              !@machine.guest.capability(:ansible_installed, config.version))
-            raise Ansible::Errors::AnsibleVersionNotFoundOnGuest, required_version: config.version.to_s
+              config.version != @gathered_version)
+            raise Ansible::Errors::AnsibleVersionMismatch,
+              system: @control_machine,
+              required_version: config.version,
+              current_version: @gathered_version
           end
+        end
+
+        def gather_ansible_version
+          raw_output = ""
+
+          result = @machine.communicate.execute(
+            "ansible --version",
+            error_class: Ansible::Errors::AnsibleNotFoundOnGuest,
+            error_key: :ansible_not_found_on_guest) do |type, output|
+            if type == :stdout && output.lines[0]
+              raw_output = output.lines[0]
+            end
+          end
+
+          if result != 0
+            raw_output = ""
+          end
+
+          raw_output
         end
 
         def get_provisioning_working_directory
@@ -105,7 +128,8 @@ module VagrantPlugins
           inventory_basedir = File.join(config.tmp_path, "inventory")
           inventory_path = File.join(inventory_basedir, "vagrant_ansible_local_inventory")
 
-          create_and_chown_remote_folder(inventory_basedir)
+          @machine.communicate.sudo("mkdir -p #{inventory_basedir}")
+          @machine.communicate.sudo("chown -R -h #{@machine.ssh_info[:username]} #{config.tmp_path}")
           @machine.communicate.sudo("rm -f #{inventory_path}", error_check: false)
 
           Tempfile.open("vagrant-ansible-local-inventory-#{@machine.name}") do |f|
@@ -139,13 +163,6 @@ module VagrantPlugins
           return machines
         end
 
-        def create_and_chown_remote_folder(path)
-          @machine.communicate.tap do |comm|
-            comm.sudo("mkdir -p #{path}")
-            comm.sudo("chown -h #{@machine.ssh_info[:username]} #{path}")
-          end
-        end
-
         def check_path(path, test_args, option_name)
           # Checks for the existence of given file (or directory) on the guest system,
           # and error if it doesn't exist.
@@ -159,7 +176,7 @@ module VagrantPlugins
             error_key: :config_file_not_found,
             config_option: option_name,
             path: remote_path,
-            system: "guest"
+            system: @control_machine
           )
         end
 

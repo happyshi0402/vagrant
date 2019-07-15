@@ -1,6 +1,6 @@
 module Vagrant
   module Util
-    # This module provies a `safe_exec` method which is a drop-in
+    # This module provides a `safe_exec` method which is a drop-in
     # replacement for `Kernel.exec` which addresses a specific issue
     # which manifests on OS X 10.5 (GH-51) and perhaps other operating systems.
     # This issue causes `exec` to fail if there is more than one system
@@ -41,14 +41,25 @@ module Vagrant
             end
           else
             if Vagrant::Util::Platform.windows?
-              @@logger.debug("Converting command and arguments to single string for exec")
+              # Re-generate strings to ensure common encoding
+              @@logger.debug("Converting command and arguments to common UTF-8 encoding for exec.")
               @@logger.debug("Command: `#{command.inspect}` Args: `#{args.inspect}`")
-              full_command = "#{command} #{args.join(" ")}"
-              @@logger.debug("Converted command: #{full_command}")
-              Kernel.exec(full_command)
-            else
-              Kernel.exec(command, *args)
+              begin
+                command = "#{command}".encode("UTF-8")
+              rescue Encoding::UndefinedConversionError => e
+                @@logger.warn("Failed to convert command - #{e.class}: #{e} (`#{command}`)")
+              end
+              args = args.map do |arg|
+                begin
+                  "#{arg}".encode("UTF-8")
+                rescue Encoding::UndefinedConversionError => e
+                  @@logger.warn("Failed to convert command argument - #{e.class}: #{e} (`#{arg}`)")
+                  arg
+                end
+              end
+              @@logger.debug("Converted - Command: `#{command.inspect}` Args: `#{args.inspect}`")
             end
+            Kernel.exec(command, *args)
           end
         rescue *rescue_from
           # We retried already, raise the issue and be done

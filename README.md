@@ -1,9 +1,10 @@
 # Vagrant
 
 * Website: [https://www.vagrantup.com/](https://www.vagrantup.com/)
-* Source: [https://github.com/mitchellh/vagrant](https://github.com/mitchellh/vagrant)
+* Source: [https://github.com/hashicorp/vagrant](https://github.com/hashicorp/vagrant)
 * [![Gitter chat](https://badges.gitter.im/mitchellh/vagrant.png)](https://gitter.im/mitchellh/vagrant)
 * Mailing list: [Google Groups](https://groups.google.com/group/vagrant-up)
+* IRC: #vagrant on freenode.org
 
 Vagrant is a tool for building and distributing development environments.
 
@@ -17,6 +18,8 @@ environments can live on your computer or in the cloud, and are portable
 between Windows, Mac OS X, and Linux.
 
 ## Quick Start
+
+Package dependencies: Vagrant requires `bsdtar` to be available on your system PATH to run successfully.
 
 For the quick-start, we'll bring up a development machine on
 [VirtualBox](https://www.virtualbox.org/) because it is free and works
@@ -42,25 +45,30 @@ the box doesn't already exist on your system.
 To learn how to build a fully functional development environment, follow the
 [getting started guide](https://www.vagrantup.com/docs/getting-started/index.html).
 
-## Installing the Gem from Git
+## Installing from Source
 
 If you want the bleeding edge version of Vagrant, we try to keep master pretty stable
 and you're welcome to give it a shot. Please review the installation page [here](https://www.vagrantup.com/docs/installation/source.html).
 
 ## Contributing to Vagrant
 
-To install Vagrant from source, please [follow the guide in the Wiki](https://github.com/mitchellh/vagrant/wiki/Installing-Vagrant-from-Source).
-
-You can run the test suite with:
+Once your Vagrant bundle is installed from Git repository, you can run the test suite with:
 
     bundle exec rake
 
-This will run the unit test suite, which should come back all green! Then you're good to go!
+This will run the unit test suite, which should come back all green!
 
-If you want to run Vagrant without having to install the gem, you may use `bundle exec`,
-like so:
+If you are developing Vagrant on a machine that already has a Vagrant package installation present, both will attempt to use the same folder for their configuration (location of this folder depends on system). This can cause errors when Vagrant attempts to load plugins. In this case, override the `VAGRANT_HOME` environment variable for your development version of Vagrant before running any commands, to be some new folder within the project or elsewhere on your machine. For example, in Bash:
 
-    bundle exec vagrant help
+    export VAGRANT_HOME=~/.vagrant-dev
+
+You can now run Vagrant commands against the development version:
+
+    bundle exec vagrant
+
+Please take time to read the [HashiCorp Community Guidelines](https://www.hashicorp.com/community-guidelines) and the [Vagrant Contributing Guide](https://github.com/hashicorp/vagrant/blob/master/.github/CONTRIBUTING.md).
+
+Then you're good to go!
 
 ### Acceptance Tests
 

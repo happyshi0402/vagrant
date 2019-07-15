@@ -4,11 +4,11 @@ require 'pathname'
 require 'set'
 require 'thread'
 
-require "checkpoint"
 require 'log4r'
 
 require 'vagrant/util/file_mode'
 require 'vagrant/util/platform'
+require 'vagrant/util/hash_with_indifferent_access'
 require "vagrant/util/silence_warnings"
 require "vagrant/vagrantfile"
 require "vagrant/version"
@@ -56,6 +56,9 @@ module Vagrant
 
     # The directory where temporary files for Vagrant go.
     attr_reader :tmp_path
+
+    # File where command line aliases go.
+    attr_reader :aliases_path
 
     # The directory where boxes are stored.
     attr_reader :boxes_path
@@ -125,36 +128,11 @@ module Vagrant
       @tmp_path   = @home_path.join("tmp")
       @machine_index_dir = @data_dir.join("machine-index")
 
+      @aliases_path = Pathname.new(ENV["VAGRANT_ALIAS_FILE"]).expand_path if ENV.key?("VAGRANT_ALIAS_FILE")
+      @aliases_path ||= @home_path.join("aliases")
+
       # Prepare the directories
       setup_home_path
-
-      # Run checkpoint in a background thread on every environment
-      # initialization. The cache file will cause this to mostly be a no-op
-      # most of the time.
-      @checkpoint_thr = Thread.new do
-        Thread.current[:result] = nil
-
-        # If we disabled checkpoint via env var, don't run this
-        if ENV["VAGRANT_CHECKPOINT_DISABLE"].to_s != ""
-          @logger.info("checkpoint: disabled from env var")
-          next
-        end
-
-        # If we disabled state and knowing what alerts we've seen, then
-        # disable the signature file.
-        signature_file = @data_dir.join("checkpoint_signature")
-        if ENV["VAGRANT_CHECKPOINT_NO_STATE"].to_s != ""
-          @logger.info("checkpoint: will not store state")
-          signature_file = nil
-        end
-
-        Thread.current[:result] = Checkpoint.check(
-          product: "vagrant",
-          version: VERSION,
-          signature_file: signature_file,
-          cache_file: @data_dir.join("checkpoint_cache"),
-        )
-      end
 
       # Setup the local data directory. If a configuration path is given,
       # it is expanded relative to the root path. Otherwise, we use the
@@ -169,6 +147,7 @@ module Vagrant
       if opts[:local_data_path]
         @local_data_path = Pathname.new(File.expand_path(opts[:local_data_path], @cwd))
       end
+
       @logger.debug("Effective local data path: #{@local_data_path}")
 
       # If we have a root path, load the ".vagrantplugins" file.
@@ -185,6 +164,18 @@ module Vagrant
       # Setup the default private key
       @default_private_key_path = @home_path.join("insecure_private_key")
       copy_insecure_private_key
+
+      # Initialize localized plugins
+      plugins = Vagrant::Plugin::Manager.instance.localize!(self)
+      # Load any environment local plugins
+      Vagrant::Plugin::Manager.instance.load_plugins(plugins)
+
+      # Initialize globalize plugins
+      plugins = Vagrant::Plugin::Manager.instance.globalize!
+      # Load any global plugins
+      Vagrant::Plugin::Manager.instance.load_plugins(plugins)
+
+      plugins = process_configured_plugins
 
       # Call the hooks that does not require configurations to be loaded
       # by using a "clean" action runner
@@ -217,7 +208,8 @@ module Vagrant
           home_path:      home_path,
           root_path:      root_path,
           tmp_path:       tmp_path,
-          ui:             @ui
+          ui:             @ui,
+          env:            self
         }
       end
     end
@@ -289,16 +281,6 @@ module Vagrant
       end
     end
 
-    # Checkpoint returns the checkpoint result data. If checkpoint is
-    # disabled, this will return nil. See the hashicorp-checkpoint gem
-    # for more documentation on the return value.
-    #
-    # @return [Hash]
-    def checkpoint
-      @checkpoint_thr.join(THREAD_MAX_JOIN_TIMEOUT)
-      return @checkpoint_thr[:result]
-    end
-
     # Makes a call to the CLI with the given arguments as if they
     # came from the real command line (sometimes they do!). An example:
     #
@@ -317,39 +299,51 @@ module Vagrant
       opts[:force_default] = true if !opts.key?(:force_default)
       opts[:check_usable] = true if !opts.key?(:check_usable)
 
-      default = ENV["VAGRANT_DEFAULT_PROVIDER"]
-      default = nil if default == ""
-      default = default.to_sym if default
+      # Implement the algorithm from
+      # https://www.vagrantup.com/docs/providers/basic_usage.html#default-provider
+      # with additional steps 2.5 and 3.5 from
+      # https://bugzilla.redhat.com/show_bug.cgi?id=1444492
+      # to allow system-configured provider priorities.
+      #
+      # 1. The --provider flag on a vagrant up is chosen above all else, if it is
+      #    present.
+      #
+      # (Step 1 is done by the caller; this method is only called if --provider
+      # wasn't given.)
+      #
+      # 2. If the VAGRANT_DEFAULT_PROVIDER environmental variable is set, it
+      #    takes next priority and will be the provider chosen.
+
+      default = ENV["VAGRANT_DEFAULT_PROVIDER"].to_s
+      if default.empty?
+        default = nil
+      else
+        default = default.to_sym
+        @logger.debug("Default provider: `#{default}`")
+      end
 
       # If we're forcing the default, just short-circuit and return
       # that (the default behavior)
-      return default if default && opts[:force_default]
+      if default && opts[:force_default]
+        @logger.debug("Using forced default provider: `#{default}`")
+        return default
+      end
 
       # Determine the config to use to look for provider definitions. By
       # default it is the global but if we're targeting a specific machine,
       # then look there.
       root_config = vagrantfile.config
       if opts[:machine]
-        machine_info = vagrantfile.machine_config(opts[:machine], nil, nil)
+        machine_info = vagrantfile.machine_config(opts[:machine], nil, nil, nil)
         root_config = machine_info[:config]
       end
 
-      # Get the list of providers within our configuration and assign
-      # a priority to each in the order they exist so that we try these first.
-      config = {}
-      root_config.vm.__providers.reverse.each_with_index do |key, idx|
-        config[key] = idx + 1
-      end
+      # Get the list of providers within our configuration, in order.
+      config = root_config.vm.__providers
 
-      # Determine the max priority so that we can add the config priority
-      # to that to make sure it is highest.
-      max_priority = 0
-      Vagrant.plugin("2").manager.providers.each do |key, data|
-        priority = data[1][:priority]
-        max_priority = priority if priority > max_priority
-      end
-
-      ordered = []
+      # Get the list of usable providers with their internally-declared
+      # priorities.
+      usable = []
       Vagrant.plugin("2").manager.providers.each do |key, data|
         impl  = data[0]
         popts = data[1]
@@ -359,33 +353,85 @@ module Vagrant
 
         # Skip providers that can't be defaulted, unless they're in our
         # config, in which case someone made our decision for us.
-        if !config.key?(key)
+        if !config.include?(key)
           next if popts.key?(:defaultable) && !popts[:defaultable]
         end
 
-        # The priority is higher if it is in our config. Otherwise, it is
-        # the priority it set PLUS the length of the config to make sure it
-        # is never higher than the configuration keys.
-        priority = popts[:priority]
-        priority = config[key] + max_priority if config.key?(key)
+        # Skip providers that aren't usable.
+        next if opts[:check_usable] && !impl.usable?(false)
 
-        ordered << [priority, key, impl, popts]
+        # Each provider sets its own priority, defaulting to 5 so we can trust
+        # it's always set.
+        usable << [popts[:priority], key]
+      end
+      @logger.debug("Initial usable provider list: #{usable}")
+
+      # Sort the usable providers by priority. Higher numbers are higher
+      # priority, otherwise alpha sort.
+      usable = usable.sort {|a, b| a[0] == b[0] ? a[1] <=> b[1] : b[0] <=> a[0]}
+                      .map {|prio, key| key}
+      @logger.debug("Priority sorted usable provider list: #{usable}")
+
+      # If we're not forcing the default, but it's usable and hasn't been
+      # otherwise excluded, return it now.
+      if usable.include?(default)
+        @logger.debug("Using default provider `#{default}` as it was found in usable list.")
+        return default
       end
 
-      # Order the providers by priority. Higher values are tried first.
-      ordered = ordered.sort do |a, b|
-        # If we see the default, then that one always wins
-        next -1 if a[1] == default
-        next 1  if b[1] == default
+      # 2.5. Vagrant will go through all of the config.vm.provider calls in the
+      #      Vagrantfile and try each in order. It will choose the first
+      #      provider that is usable and listed in VAGRANT_PREFERRED_PROVIDERS.
 
-        b[0] <=> a[0]
+      preferred = ENV.fetch('VAGRANT_PREFERRED_PROVIDERS', '')
+                     .split(',')
+                     .map {|s| s.strip}
+                     .select {|s| !s.empty?}
+                     .map {|s| s.to_sym}
+      @logger.debug("Preferred provider list: #{preferred}")
+
+      config.each do |key|
+        if usable.include?(key) && preferred.include?(key)
+          @logger.debug("Using preferred provider `#{key}` detected in configuration and usable.")
+          return key
+        end
       end
 
-      # Find the matching implementation
-      ordered.each do |_, key, impl, _|
-        return key if !opts[:check_usable]
-        return key if impl.usable?(false)
+      # 3. Vagrant will go through all of the config.vm.provider calls in the
+      #    Vagrantfile and try each in order. It will choose the first provider
+      #    that is usable. For example, if you configure Hyper-V, it will never
+      #    be chosen on Mac this way. It must be both configured and usable.
+
+      config.each do |key|
+        if usable.include?(key)
+          @logger.debug("Using provider `#{key}` detected in configuration and usable.")
+          return key
+        end
       end
+
+      # 3.5. Vagrant will go through VAGRANT_PREFERRED_PROVIDERS and find the
+      #      first plugin that reports it is usable.
+
+      preferred.each do |key|
+        if usable.include?(key)
+          @logger.debug("Using preferred provider `#{key}` found in usable list.")
+          return key
+        end
+      end
+
+      # 4. Vagrant will go through all installed provider plugins (including the
+      #    ones that come with Vagrant), and find the first plugin that reports
+      #    it is usable. There is a priority system here: systems that are known
+      #    better have a higher priority than systems that are worse. For
+      #    example, if you have the VMware provider installed, it will always
+      #    take priority over VirtualBox.
+
+      if !usable.empty?
+        @logger.debug("Using provider `#{usable[0]}` as it is the highest priority in the usable list.")
+        return usable[0]
+      end
+
+      # 5. If Vagrant still has not found any usable providers, it will error.
 
       # No providers available is a critical error for Vagrant.
       raise Errors::NoDefaultProvider
@@ -421,7 +467,7 @@ module Vagrant
         temp_dir_root: tmp_path)
     end
 
-    # Returns the {Config::Loader} that can be used to load Vagrantflies
+    # Returns the {Config::Loader} that can be used to load Vagrantfiles
     # given the settings of this environment.
     #
     # @return [Config::Loader]
@@ -859,6 +905,13 @@ module Vagrant
       begin
         @logger.debug("Creating: #{@local_data_path}")
         FileUtils.mkdir_p(@local_data_path)
+        # Create the rgloader/loader file so we can use encoded files.
+        loader_file = @local_data_path.join("rgloader", "loader.rb")
+        if !loader_file.file?
+          source_loader = Vagrant.source_root.join("templates/rgloader.rb")
+          FileUtils.mkdir_p(@local_data_path.join("rgloader").to_s)
+          FileUtils.cp(source_loader.to_s, loader_file.to_s)
+        end
       rescue Errno::EACCES
         raise Errors::LocalDataDirectoryNotAccessible,
           local_data_path: @local_data_path.to_s
@@ -866,6 +919,114 @@ module Vagrant
     end
 
     protected
+
+    # Attempt to guess the configured provider in use. Will fallback
+    # to the default provider if an explicit provider name is not
+    # provided. This can be pretty error prone, but is used during
+    # initial environment setup to allow loading plugins so it doesn't
+    # need to be perfect
+    #
+    # @return [String]
+    def guess_provider
+      gp = nil
+      ARGV.each_with_index do |val, idx|
+        if val.start_with?("--provider=")
+          gp = val.split("=", 2).last
+          break
+        elsif val == "--provider"
+          gp = ARGV[idx+1]
+          break
+        end
+      end
+      return gp.to_sym if gp
+      begin
+        default_provider
+      rescue Errors::NoDefaultProvider
+        # if a provider cannot be determined just return nil
+        nil
+      end
+    end
+
+    # Load any configuration provided by guests defined within
+    # the Vagrantfile to pull plugin information they may have
+    # defined.
+    def find_configured_plugins
+      plugins = []
+      provider = guess_provider
+      vagrantfile.machine_names.each do |mname|
+        ldp = @local_data_path.join("machines/#{mname}/#{provider}") if @local_data_path
+        plugins << vagrantfile.machine_config(mname, guess_provider, boxes, ldp, false)[:config]
+      end
+      result = plugins.reverse.inject(Vagrant::Util::HashWithIndifferentAccess.new) do |memo, val|
+        Vagrant::Util::DeepMerge.deep_merge(memo, val.vagrant.plugins)
+      end
+      Vagrant::Util::DeepMerge.deep_merge(result, vagrantfile.config.vagrant.plugins)
+    end
+
+    # Check for any local plugins defined within the Vagrantfile. If
+    # found, validate they are available. If they are not available,
+    # request to install them, or raise an exception
+    #
+    # @return [Hash] plugin list for loading
+    def process_configured_plugins
+      return if !Vagrant.plugins_enabled?
+      errors = vagrantfile.config.vagrant.validate(nil)
+      if !errors["vagrant"].empty?
+        raise Errors::ConfigInvalid,
+          errors: Util::TemplateRenderer.render(
+            "config/validation_failed",
+            errors: errors)
+      end
+      # Check if defined plugins are installed
+      installed = Plugin::Manager.instance.installed_plugins
+      needs_install = []
+      config_plugins = find_configured_plugins
+      config_plugins.each do |name, info|
+        if !installed[name]
+          needs_install << name
+        end
+      end
+      if !needs_install.empty?
+        ui.warn(I18n.t("vagrant.plugins.local.uninstalled_plugins",
+          plugins: needs_install.sort.join(", ")))
+        if !Vagrant.auto_install_local_plugins?
+          answer = nil
+          until ["y", "n"].include?(answer)
+            answer = ui.ask(I18n.t("vagrant.plugins.local.request_plugin_install") + " [N]: ")
+            answer = answer.strip.downcase
+            answer = "n" if answer.to_s.empty?
+          end
+          if answer == "n"
+            raise Errors::PluginMissingLocalError,
+              plugins: needs_install.sort.join(", ")
+          end
+        end
+        needs_install.each do |name|
+          pconfig = Util::HashWithIndifferentAccess.new(config_plugins[name])
+          ui.info(I18n.t("vagrant.commands.plugin.installing", name: name))
+
+          options = {sources: Vagrant::Bundler::DEFAULT_GEM_SOURCES.dup, env_local: true}
+          options[:sources] = pconfig[:sources] if pconfig[:sources]
+          options[:require] = pconfig[:entry_point] if pconfig[:entry_point]
+          options[:version] = pconfig[:version] if pconfig[:version]
+
+          spec = Plugin::Manager.instance.install_plugin(name, options)
+
+          ui.info(I18n.t("vagrant.commands.plugin.installed",
+            name: spec.name, version: spec.version.to_s))
+        end
+        ui.info("\n")
+        # Force halt after installation and require command to be run again. This
+        # will proper load any new locally installed plugins which are now available.
+        ui.warn(I18n.t("vagrant.plugins.local.install_rerun_command"))
+        exit(-1)
+      end
+      if Vagrant::Plugin::Manager.instance.local_file
+        Vagrant::Plugin::Manager.instance.local_file.installed_plugins
+      else
+        {}
+      end
+    end
 
     # This method copies the private key into the home directory if it
     # doesn't already exist.

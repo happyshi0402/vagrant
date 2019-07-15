@@ -14,10 +14,8 @@ description: |-
 The Vagrant Ansible Local provisioner allows you to provision the guest using [Ansible](http://ansible.com) playbooks by executing **`ansible-playbook` directly on the guest machine**.
 
 <div class="alert alert-warning">
-  <strong>Warning:</strong> If you are not familiar with Ansible and Vagrant already,
-  I recommend starting with the <a href="/docs/provisioning/shell.html">shell
-  provisioner</a>. However, if you are comfortable with Vagrant already, Vagrant
-  is a great way to learn Ansible.
+  <strong>Warning:</strong>
+  If you are not familiar with Ansible and Vagrant already, we recommend starting with the <a href="/docs/provisioning/shell.html">shell provisioner</a>. However, if you are comfortable with Vagrant already, Vagrant is a great way to learn Ansible.
 </div>
 
 ## Setup Requirements
@@ -64,18 +62,21 @@ This section lists the _specific_ options for the Ansible Local provisioner. In 
     Vagrant will try to install (or upgrade) Ansible when one of these conditions are met:
 
     - Ansible is not installed (or cannot be found).
-    - The `version` option is set to `"latest"`.
-    - The current Ansible version does not correspond to the `version` option.
+    - The [`version`](/docs/provisioning/ansible_common.html#version) option is set to `"latest"`.
+    - The current Ansible version does not correspond to the [`version`](/docs/provisioning/ansible_common.html#version) option.
 
-    **Attention:** There is no guarantee that this automated installation will replace a custom Ansible setup, that might be already present on the Vagrant box.
+    <div class="alert alert-warning">
+      <strong>Attention:</strong>
+      There is no guarantee that this automated installation will replace a custom Ansible setup, that might be already present on the Vagrant box.
+    </div>
 
 - `install_mode` (`:default`, `:pip`, or `:pip_args_only`) - Select the way to automatically install Ansible on the guest system.
 
   - `:default`: Ansible is installed from the operating system package manager. This mode doesn't support `version` selection. For many platforms (e.g Debian, FreeBSD, OpenSUSE) the official package repository is used, except for the following Linux distributions:
-      - On Ubuntu-like systems, the latest Ansible release is installed from the `ppa:ansible/ansible` repository.
+      - On Ubuntu-like systems, the latest Ansible release is installed from the `ppa:ansible/ansible` repository. The compatibility is maintained only for active long-term support (LTS) versions.
       - On RedHat-like systems, the latest Ansible release is installed from the [EPEL](http://fedoraproject.org/wiki/EPEL) repository.
 
-  - `:pip`: Ansible is installed from [PyPI](https://pypi.python.org/pypi) with [pip](https://pip.pypa.io) package installer. With this mode, Vagrant will systematically try to [install the latest pip version](https://pip.pypa.io/en/stable/installing/#installing-with-get-pip-py). With the `:pip` mode you can optionally install a specific Ansible release by setting the [`version`](#version) option.
+  - `:pip`: Ansible is installed from [PyPI](https://pypi.python.org/pypi) with [pip](https://pip.pypa.io) package installer. With this mode, Vagrant will systematically try to [install the latest pip version](https://pip.pypa.io/en/stable/installing/#installing-with-get-pip-py). With the `:pip` mode you can optionally install a specific Ansible release by setting the [`version`](/docs/provisioning/ansible_common.html#version) option.
 
         Example:
 
@@ -92,23 +93,48 @@ This section lists the _specific_ options for the Ansible Local provisioner. In 
         sudo pip install --upgrade ansible==2.2.1.0
         ```
 
+    As-is `pip` is installed if needed via a default command which looks like
+
+    ```shell
+    curl https://bootstrap.pypa.io/get-pip.py | sudo python
+    ```
+
+    This can be problematic in certain scenarios, for example, when behind a proxy. It is possible to override this default command by providing an explicit command to run as part of the config using `pip_install_cmd`. For example:
+
+    ```ruby
+    config.vm.provision "ansible_local" do |ansible|
+      ansible.playbook = "playbook.yml"
+      ansible.install_mode = "pip"
+      ansible.pip_install_cmd = "https_proxy=http://your.proxy.server:port curl -s https://bootstrap.pypa.io/get-pip.py | sudo https_proxy=http/your.proxy.server:port python"
+      ansible.version = "2.2.1.0"
+    end
+    ```
+
+    In this case case `pip` will be installed via the command:
+
+    ```shell
+    https_proxy=http://your.proxy.server:port curl -s https://bootstrap.pypa.io/get-pip.py | sudo https_proxy=http://your.proxy.server:porpython
+    ```
+
+    If `pip_install_cmd` is not provided in the config, then `pip` is installed via the default command.
+
   - `:pip_args_only`: This mode is very similar to the `:pip` mode, with the difference that in this case no pip arguments will be automatically set by Vagrant.
 
-        Example:
+    Example:
 
-        ```ruby
-        config.vm.provision "ansible_local" do |ansible|
-          ansible.playbook = "playbook.yml"
-          ansible.install_mode = "pip_args_only"
-          ansible.pip_args = "-r /vagrant/requirements.txt"
-        end
-        ```
+    ```ruby
+    config.vm.provision "ansible_local" do |ansible|
+      ansible.playbook = "playbook.yml"
+      ansible.install_mode = "pip_args_only"
+      ansible.pip_args = "-r /vagrant/requirements.txt"
+    end
+    ```
 
-        With this configuration, Vagrant will install `pip` and then execute the command
+    With this configuration, Vagrant will install `pip` and then execute the command
 
-        ```shell
-        sudo pip install -r /vagrant/requirements.txt
-        ```
+    ```shell
+    sudo pip install -r /vagrant/requirements.txt
+    ```
 
     The default value of `install_mode` is `:default`, and any invalid value for this option will silently fall back to the default value.
 
@@ -122,7 +148,7 @@ This section lists the _specific_ options for the Ansible Local provisioner. In 
     config.vm.provision "ansible_local" do |ansible|
       ansible.playbook = "playbook.yml"
       ansible.install_mode = :pip
-      ansible.pip_args = "--install-url https://pypi.internal"
+      ansible.pip_args = "--index-url https://pypi.internal"
     end
     ```
 
@@ -140,17 +166,30 @@ This section lists the _specific_ options for the Ansible Local provisioner. In 
 
     The default value is `/tmp/vagrant-ansible`
 
-- `version` (string) - The expected Ansible version.
-
-    This option is disabled by default.
-
-    When an Ansible version is defined (e.g. `"1.8.2"`), the Ansible local provisioner will be executed only if Ansible is installed at the requested version.
-
-    When this option is set to `"latest"`, no version check is applied.
-
-    **Warning:** It is currently possible to use this option to specify which version of Ansible must be automatically installed, but only in combination with the `install_mode` set to `:pip`.
-
 ## Tips and Tricks
+
+### Install Galaxy Roles in a path owned by root
+
+ <div class="alert alert-warning">
+    <strong>Disclaimer:</strong> This tip is not a recommendation to install galaxy roles out of the vagrant user space, especially if you rely on ssh agent forwarding to fetch the roles.
+</div>
+
+Be careful that `ansible-galaxy` command is executed by default as vagrant user. Setting `galaxy_roles_path` to a folder like `/etc/ansible/roles` will fail, and `ansible-galaxy` will extract the role a second time in `/home/vagrant/.ansible/roles/`. Then if your playbook uses `become` to run as `root`, it will fail with a _"role was not found"_ error.
+
+To work around that, you can use `ansible.galaxy_command` to prepend the command with `sudo`, as illustrated in the example below:
+
+```ruby
+Vagrant.configure(2) do |config|
+  config.vm.box = "centos/7"
+  config.vm.provision "ansible_local" do |ansible|
+    ansible.become = true
+    ansible.playbook = "playbook.yml"
+    ansible.galaxy_role_file = "requirements.yml"
+    ansible.galaxy_roles_path = "/etc/ansible/roles"
+    ansible.galaxy_command = "sudo ansible-galaxy install --role-file=%{role_file} --roles-path=%{roles_path} --force"
+  end
+end
+```
 
 ### Ansible Parallel Execution from a Guest
 

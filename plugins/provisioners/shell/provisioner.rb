@@ -18,6 +18,10 @@ module VagrantPlugins
           args = " #{args.join(" ")}"
         end
 
+        # In cases where the connection is just being reset
+        # bail out before attempting to do any actual provisioning
+        return if !config.path && !config.inline
+
         case @machine.config.vm.communicator
         when :winrm
           provision_winrm(args)
@@ -25,6 +29,12 @@ module VagrantPlugins
           provision_winssh(args)
         else
           provision_ssh(args)
+        end
+      ensure
+        if config.reboot
+          @machine.guest.capability(:reboot)
+        else
+          @machine.communicate.reset! if config.reset
         end
       end
 
@@ -43,7 +53,7 @@ module VagrantPlugins
           options = {}
           options[:color] = color if !config.keep_color
 
-          @machine.ui.info(data.chomp, options)
+          @machine.ui.detail(data.chomp, options)
         end
       end
 
@@ -265,7 +275,7 @@ module VagrantPlugins
         # or we're running on Windows.
         if !config.binary && @machine.config.vm.communicator != :winrm
           begin
-            script.gsub!(/\r\n?$/, "\n")
+            script = script.gsub(/\r\n?$/, "\n")
           rescue ArgumentError
             script = script.force_encoding("ASCII-8BIT").gsub(/\r\n?$/, "\n")
           end

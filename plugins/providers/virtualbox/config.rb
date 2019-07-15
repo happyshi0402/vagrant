@@ -19,6 +19,13 @@ module VagrantPlugins
       # @return [Array]
       attr_reader :customizations
 
+      # Set the default type of NIC hardware to be used for network
+      # devices. By default this is `nil` and VirtualBox's default
+      # will be used.
+      #
+      # @return [String]
+      attr_accessor :default_nic_type
+
       # If true, unused network interfaces will automatically be deleted.
       # This defaults to false because the detection does not work across
       # multiple users, and because on Windows this operation requires
@@ -68,6 +75,7 @@ module VagrantPlugins
         @auto_nat_dns_proxy = UNSET_VALUE
         @check_guest_additions = UNSET_VALUE
         @customizations   = []
+        @default_nic_type = UNSET_VALUE
         @destroy_unused_network_interfaces = UNSET_VALUE
         @functional_vboxsf = UNSET_VALUE
         @name             = UNSET_VALUE
@@ -158,6 +166,8 @@ module VagrantPlugins
 
         # The default name is just nothing, and we default it
         @name = nil if @name == UNSET_VALUE
+
+        @default_nic_type = nil if @default_nic_type == UNSET_VALUE
       end
 
       def validate(machine)

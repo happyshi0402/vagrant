@@ -8,7 +8,7 @@ describe Vagrant::Config::Loader do
   # This is the current version of configuration for the tests.
   let(:current_version) { version_order.last }
 
-  # This is just a dummy implementation of a configuraiton loader which
+  # This is just a dummy implementation of a configuration loader which
   # simply acts on hashes.
   let(:test_loader) do
     Class.new(Vagrant::Config::VersionBase) do
@@ -23,7 +23,7 @@ describe Vagrant::Config::Loader do
       end
 
       def self.merge(old, new)
-        old.merge(new)
+        old.merge(new) {|key, oldval, newval| oldval.concat(newval)}
       end
     end
   end
@@ -86,6 +86,20 @@ describe Vagrant::Config::Loader do
       expect(config[:foo]).to eq("yep")
       expect(warnings).to eq([])
       expect(errors).to eq([])
+    end
+
+    it "should throw a NameError exception if invalid or undefined variable is used" do
+      vagrantfile = <<-VF
+      Vagrant.configure("2") do |config|
+        config.ssh.port = variable
+      end
+      VF
+
+      instance.set(:foo, temporary_file(vagrantfile))
+
+      expect {
+        instance.load([:foo])
+      }.to raise_error(Vagrant::Errors::VagrantfileNameError, /invalid or undefined variable/)
     end
   end
 
@@ -175,6 +189,25 @@ describe Vagrant::Config::Loader do
         # Verify the count is only one
         expect(count).to eq(1)
       end
+    end
+
+    it "should discard duplicate configs if :home and :root are the same" do
+      proc = Proc.new do |config|
+        config[:foo] = ["yep"]
+      end
+
+      order = [:root, :home]
+
+      instance.set(:root, [[current_version, proc]])
+      instance.set(:home, [[current_version, proc]])
+
+      result, warnings, errors = instance.load(order)
+
+      # Verify the config result
+      expect(result[:foo]).to eq(["yep"])
+      expect(result[:foo].size).to eq(1)
+      expect(warnings).to eq([])
+      expect(errors).to eq([])
     end
 
     it "should only load configuration files once" do

@@ -1,15 +1,24 @@
 require 'log4r'
 require 'optparse'
 
+require 'vagrant/util/experimental'
+
 module Vagrant
   # Manages the command line interface to Vagrant.
   class CLI < Vagrant.plugin("2", :command)
+
     def initialize(argv, env)
       super
 
       @logger = Log4r::Logger.new("vagrant::cli")
       @main_args, @sub_command, @sub_args = split_main_and_subcommand(argv)
 
+      if Vagrant::Util::Experimental.feature_enabled?("typed_triggers")
+        ui = Vagrant::UI::Prefixed.new(env.ui, "vagrant")
+        @triggers = Vagrant::Plugin::V2::Trigger.new(env, env.vagrantfile.config.trigger, nil, ui)
+      end
+
+      Util::CheckpointClient.instance.setup(env).check
       @logger.info("CLI: #{@main_args.inspect} #{@sub_command.inspect} #{@sub_args.inspect}")
     end
 
@@ -21,11 +30,23 @@ module Vagrant
         return 0
       end
 
+      if @sub_command == "login"
+        $stderr.puts "WARNING: This command has been deprecated and aliased to `vagrant cloud auth login`"
+      end
+
       # If we reached this far then we must have a subcommand. If not,
       # then we also just print the help and exit.
       command_plugin = nil
       if @sub_command
         command_plugin = Vagrant.plugin("2").manager.commands[@sub_command.to_sym]
+
+        if !command_plugin
+          alias_command = Alias.new(@env).commands[@sub_command.to_sym]
+
+          if alias_command
+            return alias_command.call(@sub_args)
+          end
+        end
       end
 
       if !command_plugin || !@sub_command
@@ -36,16 +57,20 @@ module Vagrant
       command_class = command_plugin[0].call
       @logger.debug("Invoking command class: #{command_class} #{@sub_args.inspect}")
 
+      Util::CheckpointClient.instance.display
+
       # Initialize and execute the command class, returning the exit status.
       result = 0
       begin
+        @triggers.fire_triggers(@sub_command.to_sym, :before, nil, :command) if Vagrant::Util::Experimental.feature_enabled?("typed_triggers")
         result = command_class.new(@sub_args, @env).execute
+        @triggers.fire_triggers(@sub_command.to_sym, :after, nil, :command) if Vagrant::Util::Experimental.feature_enabled?("typed_triggers")
       rescue Interrupt
         @env.ui.info(I18n.t("vagrant.cli_interrupt"))
         result = 1
       end
 
-      result = 0 if !result.is_a?(Fixnum)
+      result = 0 if !result.is_a?(Integer)
       return result
     end
 
